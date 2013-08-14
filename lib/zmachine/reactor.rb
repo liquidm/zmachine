@@ -9,6 +9,7 @@ java_import java.nio.channels.ServerSocketChannel
 java_import java.nio.channels.SocketChannel
 java_import java.util.TreeMap
 java_import java.util.concurrent.atomic.AtomicBoolean
+java_import java.util.concurrent.ConcurrentLinkedQueue
 
 require 'zmachine/acceptor'
 require 'zmachine/channel'
@@ -27,8 +28,7 @@ module ZMachine
       @next_signature = 0
       @shutdown_hooks = []
       @wrapped_exception = nil
-      @next_tick_mutex = Mutex.new
-      @next_tick_queue = []
+      @next_tick_queue = ConcurrentLinkedQueue.new
       @running = false
 
       @loop_breaker = AtomicBoolean.new
@@ -46,7 +46,7 @@ module ZMachine
       begin
         @running = true
         add_timer(0, @callback) if @callback
-        if @next_tick_queue && !@next_tick_queue.empty?
+        if !@next_tick_queue.empty?
           add_timer(0) { signal_loopbreak }
         end
         @selector = Selector.open
@@ -72,7 +72,7 @@ module ZMachine
         begin
           @reactor = nil
         ensure
-          @next_tick_queue = []
+          @next_tick_queue = ConcurrentLinkedQueue.new
         end
         @running = false
       end
@@ -356,7 +356,7 @@ module ZMachine
         else
           @unbound_connections << signature
         end
-      rescue IOException => e
+      rescue IOException
         @unbound_connections << signature
       end
     end
@@ -384,10 +384,11 @@ module ZMachine
     end
 
     def run_deferred_callbacks
-      size = @next_tick_mutex.synchronize { @next_tick_queue.size }
-      size.times do |i|
-        callback = @next_tick_mutex.synchronize { @next_tick_queue.shift }
+      # max is current size
+      size = @next_tick_queue.size
+      while size > 0 && callback = @next_tick_queue.poll
         begin
+          size -= 1
           callback.call
         ensure
           ZMachine.next_tick {} if $!
@@ -397,9 +398,7 @@ module ZMachine
 
     def next_tick(pr=nil, &block)
       raise ArgumentError, "no proc or block given" unless ((pr && pr.respond_to?(:call)) or block)
-      @next_tick_mutex.synchronize do
-        @next_tick_queue << ( pr || block )
-      end
+      @next_tick_queue << ( pr || block )
       signal_loopbreak if running?
     end
 
