@@ -4,12 +4,15 @@ module ZMachine
 
   class Connection
     attr_accessor :signature
+    attr_reader :channel
 
     alias original_method method
 
-    def self.new(sig, *args)
+    def self.new(signature, channel, reactor, *args)
       allocate.instance_eval do
-        @signature = sig
+        @signature = signature
+        @channel = channel
+        @reactor = reactor
         initialize(*args)
         post_init
         self
@@ -30,11 +33,12 @@ module ZMachine
     end
 
     def close_connection after_writing = false
-      ZMachine::_close_connection @signature, after_writing
+      @reactor.close_connection(@signature, after_writing)
     end
 
     def detach
-      ZMachine::_detach_fd @signature
+      @reactor.unbound_connections << @signature
+      @channel.channel.fdVal
     end
 
     def get_sock_opt level, option
@@ -53,7 +57,7 @@ module ZMachine
       data = data.to_s
       size = data.bytesize if data.respond_to?(:bytesize)
       size ||= data.size
-      ZMachine::_send_data @signature, data, size
+      @reactor.send_data(@signature, data.to_java_bytes)
     end
 
     def error?
@@ -72,11 +76,15 @@ module ZMachine
     end
 
     def get_peername
-      ZMachine::_get_peername @signature
+      if peer = @reactor.peer_name(@signature)
+        Socket.pack_sockaddr_in(*peer)
+      end
     end
 
     def get_sockname
-      ZMachine::_get_sockname @signature
+      if sock_name = @reactor.get_sock_name(@signature)
+        Socket.pack_sockaddr_in(*sock_name)
+      end
     end
 
     def reconnect server, port
@@ -84,19 +92,19 @@ module ZMachine
     end
 
     def notify_readable= mode
-      ZMachine::_set_notify_readable @signature, mode
+      @reactor.set_notify_readable(@signature, mode)
     end
 
     def notify_readable?
-      ZMachine::_is_notify_readable @signature
+      @reactor.is_notify_readable(@signature)
     end
 
     def notify_writable= mode
-      ZMachine::_set_notify_writable @signature, mode
+      @reactor.set_notify_writable(@signature, mode)
     end
 
     def notify_writable?
-      ZMachine::_is_notify_writable @signature
+      @reactor.is_notify_writable(@signature)
     end
 
     def pause
