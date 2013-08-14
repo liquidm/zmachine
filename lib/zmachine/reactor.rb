@@ -1,3 +1,4 @@
+java_import java.io.FileDescriptor
 java_import java.io.IOException
 java_import java.net.InetSocketAddress
 java_import java.nio.ByteBuffer
@@ -5,6 +6,7 @@ java_import java.nio.channels.ClosedChannelException
 java_import java.nio.channels.SelectionKey
 java_import java.nio.channels.Selector
 java_import java.nio.channels.ServerSocketChannel
+java_import java.nio.channels.SocketChannel
 java_import java.util.TreeMap
 java_import java.util.concurrent.atomic.AtomicBoolean
 
@@ -76,6 +78,10 @@ module ZMachine
       end
 
       raise @wrapped_exception if @wrapped_exception
+    end
+
+    def error_handler(callback = nil, &block)
+      @error_handler = callback || block
     end
 
     def add_shutdown_hook(&block)
@@ -570,7 +576,7 @@ module ZMachine
       if connection = @connections.delete(signature)
         begin
           if connection.original_method(:unbind).arity != 0
-            connection.unbind(data == 0 ? nil : ZMachine::ERRNOS[data])
+            connection.unbind(nil)
           else
             connection.unbind
           end

@@ -68,7 +68,9 @@ module ZMachine
       when -1
         true
       else
-        ZMachine::ERRNOS[errno]
+        Errno::constants.select do |name|
+          Errno.__send__(:const_get, name)::Errno == errno
+        end.first
       end
     end
 
