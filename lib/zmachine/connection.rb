@@ -41,11 +41,11 @@ module ZMachine
       @channel.channel.fdVal
     end
 
-    def get_sock_opt level, option
+    def get_sock_opt(level, option)
       ZMachine::_get_sock_opt @signature, level, option
     end
 
-    def set_sock_opt level, optname, optval
+    def set_sock_opt(level, optname, optval)
       ZMachine::_set_sock_opt @signature, level, optname, optval
     end
 
@@ -53,11 +53,9 @@ module ZMachine
       close_connection true
     end
 
-    def send_data data
-      data = data.to_s
-      size = data.bytesize if data.respond_to?(:bytesize)
-      size ||= data.size
-      @reactor.send_data(@signature, data.to_java_bytes)
+    # TODO add more d attributes (badpokerface)
+    def send_data(d1, d2=nil, d3=nil, d4=nil)
+      @reactor.send_data(@signature, d1, d2, d3, d4)
     end
 
     def error?

@@ -30,7 +30,6 @@ module ZMachine
     def_delegator :instance, :run
     def_delegator :instance, :runnning?, :reactor_running?
     def_delegator :instance, :reconnect
-    def_delegator :instance, :start_server
     def_delegator :instance, :stop, :stop_event_loop
     def_delegator :instance, :stop_server
     def_delegator :instance, :watch
@@ -126,6 +125,14 @@ module ZMachine
 
   def self.spawn(&block)
     _not_implemented
+  end
+
+  def self.start_server(server, port_or_type=nil, handler=nil, *args, &block)
+    if server =~ %r{\w+://}
+      instance.start_zmq_server(server, port_or_type, handler, *args)
+    else
+      instance.start_tcp_server(server, port_or_type, handler, *args, &block)
+    end
   end
 
   def self.start_unix_domain_server(filename, *args, &block)

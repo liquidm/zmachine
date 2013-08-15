@@ -11,8 +11,12 @@ java_import java.util.TreeMap
 java_import java.util.concurrent.atomic.AtomicBoolean
 java_import java.util.concurrent.ConcurrentLinkedQueue
 
+require 'zmachine/jeromq-0.3.0-20130721.175323-20.jar'
+java_import org.zeromq.ZContext
+
 require 'zmachine/acceptor'
-require 'zmachine/channel'
+require 'zmachine/tcp_channel'
+require 'zmachine/zmq_channel'
 
 module ZMachine
   class Reactor
@@ -36,6 +40,8 @@ module ZMachine
 
       # don't use a direct buffer. Ruby doesn't seem to like them.
       @read_buffer = ByteBuffer.allocate(32*1024)
+
+      @context = ZContext.new
     end
 
     def run(callback=nil, shutdown_hook=nil, &block)
@@ -120,29 +126,34 @@ module ZMachine
       end
     end
 
-    def start_server(server, port=nil, handler=nil, *args, &block)
-      begin
-        port = Integer(port)
-      rescue ArgumentError, TypeError
-        args.unshift(handler) if handler
-        handler = port
-        port = nil
-      end if port
-
+    def start_tcp_server(address, port, handler, *args, &block)
       klass = _klass_from_handler(Connection, handler, *args)
-
-      address = InetSocketAddress.new(address, port)
-      server_socket_channel = ServerSocketChannel.open
-      server_socket_channel.configure_blocking(false)
-      server_socket_channel.socket.bind(address)
       signature = next_signature
-      server_socket_channel.register(@selector, SelectionKey::OP_ACCEPT, signature)
-      @acceptors[signature] = Acceptor.new(server_socket_channel, klass, args, block)
+      address = InetSocketAddress.new(address, port)
+      selectable_channel = ServerSocketChannel.open
+      selectable_channel.configure_blocking(false)
+      selectable_channel.socket.bind(address)
+      selectable_channel.register(@selector, SelectionKey::OP_ACCEPT, signature)
+      @acceptors[signature] = Acceptor.new(selectable_channel, klass, args, block)
+      signature
+    end
+
+    def start_zmq_server(address, type, handler, *args, &block)
+      klass = _klass_from_handler(Connection, handler, *args)
+      signature = next_signature
+      socket = @context.create_socket(type)
+      socket.bind(address)
+      socket.fd.register(@selector, SelectionKey::OP_ACCEPT, signature)
+      channel = ZMQChannel.new(socket, signature, @selector)
+      acceptors = Acceptor.new(socket, klass, args, block)
+      connection = acceptor.klass.new(signature, channel, self, *acceptor.args)
+      @connections[signature] = connection
+      @acceptors[signature] = acceptor # for close
       signature
     end
 
     def stop_server(signature)
-      @acceptors.remove(signature).socket.close
+      @acceptors.remove(signature).close
     end
 
     def connect(server, port=nil, handler=nil, *args, &block)
@@ -157,35 +168,6 @@ module ZMachine
       klass = _klass_from_handler(Connection, handler, *args)
 
       connection = connect_tcp_server(server, port, nil, klass, *args)
-      yield connection if block_given?
-      connection
-    end
-
-    def watch(io, handler=nil, *args, &block)
-      attach_io(io, true, handler, *args, &block)
-    end
-
-    def attach(io, handler=nil, *args, &block)
-      attach_io(io, false, handler, *args, &block)
-    end
-
-    def attach_io(io, watch_mode, handler=nil, *args)
-      klass = _klass_from_handler(Connection, handler, *args)
-
-      signature = next_signature
-
-      channel = Channel.new(io, signature, @selector)
-      channel.attached = true
-      channel.watch_only = watch_mode
-
-      connection = klass.new(signature, channel, self, *args)
-      connection.instance_variable_set(:@io, io)
-      connection.instance_variable_set(:@watch_mode, watch_mode)
-      connection.instance_variable_set(:@fd, nil) # API compat
-
-      @connections[signature] = connection
-      @new_connections << signature
-
       yield connection if block_given?
       connection
     end
@@ -273,7 +255,7 @@ module ZMachine
         rescue IOException => e
           e.printStackTrace
           selected_key.cancel
-          @acceptors.remove(selected_key.attachment).socket.close rescue nil
+          @acceptors.remove(selected_key.attachment).close rescue nil
           break
         end
 
@@ -287,7 +269,7 @@ module ZMachine
         server_signature = selected_key.attachment
         client_signature = next_signature
 
-        channel = Channel.new(socket_channel, client_signature, @selector)
+        channel = TCPChannel.new(socket_channel, client_signature, @selector)
         acceptor = @acceptors[server_signature]
         raise NoHandlerForAcceptedConnection unless acceptor.klass
         connection = acceptor.klass.new(client_signature, channel, self, *acceptor.args)
@@ -301,25 +283,12 @@ module ZMachine
       channel = selected_key.attachment
       signature = channel.signature
 
-      if channel.watch_only
-        if channel.notify_readable
-          connection = @connections[signature] or raise ConnectionNotBound
-          connection.notify_readable
-        end
-      else
-        @read_buffer.clear
-
-        begin
-          channel.read_inbound_data(@read_buffer)
-          @read_buffer.flip
-          if @read_buffer.limit > 0
-            buffer = String.from_java_bytes(@read_buffer.array[@read_buffer.position...@read_buffer.limit])
-            connection = @connections[signature] or raise ConnectionNotBound, "received data #{buffer} for unknown signature: #{signature}"
-            connection.receive_data(buffer)
-          end
-        rescue IOException => e
-          @unbound_connections << signature
-        end
+      begin
+        data = channel.read_inbound_data(@read_buffer)
+        connection = @connections[signature] or raise ConnectionNotBound, "received data #{buffer} for unknown signature: #{signature}"
+        connection.receive_data(data)
+      rescue IOException => e
+        @unbound_connections << signature
       end
     end
 
@@ -327,17 +296,10 @@ module ZMachine
       channel = selected_key.attachment
       signature = channel.signature
 
-      if channel.watch_only
-        if channel.notify_writable
-          connection = @connections[signature] or raise ConnectionNotBound
-          connection.notify_writable
-        end
-      else
-        begin
-          @unbound_connections << signature unless channel.write_outbound_data
-        rescue IOException => e
-          @unbound_connections << signature
-        end
+      begin
+        @unbound_connections << signature unless channel.write_outbound_data
+      rescue IOException => e
+        @unbound_connections << signature
       end
     end
 
@@ -360,7 +322,7 @@ module ZMachine
     def close
       @selector.close rescue nil
       @selector = nil
-      @acceptors.values.map(&:socket).each(&:close)
+      @acceptors.values.each(&:close)
 
       channels = @connections.values.compact.map(&:channel)
       channels.each do |channel|
@@ -426,8 +388,8 @@ module ZMachine
       end
     end
 
-    def send_data(signature, buffer)
-      @connections[signature].channel.schedule_outbound_data(ByteBuffer.wrap(buffer))
+    def send_data(signature, d1, d2, d3, d4)
+      @connections[signature].channel.send_data(d1, d2, d3, d4)
     end
 
     def connect_tcp_server(address, port, connection=nil, klass=nil, *args)
@@ -437,7 +399,7 @@ module ZMachine
         socket_channel = SocketChannel.open
         socket_channel.configure_blocking(false)
 
-        channel = Channel.new(socket_channel, signature, @selector)
+        channel = TCPChannel.new(socket_channel, signature, @selector)
         address = InetSocketAddress.new(address, port)
 
         if socket_channel.connect(address)
@@ -514,13 +476,6 @@ module ZMachine
             connection.unbind(nil)
           else
             connection.unbind
-          end
-          if connection.instance_variable_defined?(:@io) and !connection.instance_variable_get(:@watch_mode)
-            io = connection.instance_variable_get(:@io)
-            begin
-              io.close
-            rescue Errno::EBADF, IOError
-            end
           end
         rescue
           @wrapped_exception = $!

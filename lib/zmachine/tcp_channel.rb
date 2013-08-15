@@ -1,29 +1,21 @@
 module ZMachine
-  class Channel
+  class TCPChannel
 
-    attr_reader :channel
+    attr_reader :selectable_channel
     attr_reader :signature
-    attr_reader :watch_only
-    attr_accessor :notify_readable
-    attr_accessor :notify_writable
     attr_reader :connect_pending
-    attr_accessor :attached
 
-    def initialize(channel, signature, sel)
-      @channel = channel
+    def initialize(selectable_channel, signature, selector)
+      @selectable_channel = selectable_channel
       @signature = signature
-      @selector = sel
+      @selector = selector
       @close_scheduled = false
       @connect_pending = false
-      @watch_only = false
-      @attached = false
-      @notify_readable = false
-      @notify_writable = false
       @outbound_queue = []
     end
 
     def register
-      @channel_key ||= @channel.register(@selector, current_events, self)
+      @channel_key ||= @selectable_channel.register(@selector, current_events, self)
     end
 
     def close
@@ -32,15 +24,16 @@ module ZMachine
         @channel_key = nil
       end
 
-      @channel.close rescue nil
+      @selectable_channel.close rescue nil
     end
 
     def cleanup
-      @channel = nil
+      @selectable_channel = nil
     end
 
-    def schedule_outbound_data(buffer)
+    def send_data(d1, d2, d3, d4)
       return if @close_scheduled
+      buffer = ByteBuffer.wrap(d1.to_java_bytes)
       if buffer.remaining() > 0
         @outbound_queue << buffer
         update_events
@@ -48,13 +41,17 @@ module ZMachine
     end
 
     def read_inbound_data(buffer)
-      raise IOException.new("eof") if @channel.read(buffer) == -1
+      buffer.clear
+      raise IOException.new("eof") if @selectable_channel.read(buffer) == -1
+      buffer.flip
+      return if buffer.limit == 0
+      String.from_java_bytes(buffer.array[buffer.position...buffer.limit])
     end
 
     def write_outbound_data
       until @outbound_queue.empty?
         buffer = @outbound_queue.first
-        channel.write(buffer) if buffer.remaining > 0
+        selectable_channel.write(buffer) if buffer.remaining > 0
 
         # Did we consume the whole outbound buffer? If yes,
         # pop it off and keep looping. If no, the outbound network
@@ -74,7 +71,7 @@ module ZMachine
     end
 
     def finish_connecting
-      @channel.finish_connect
+      @selectable_channel.finish_connect
       @connect_pending = false
       update_events
       return true
@@ -93,32 +90,17 @@ module ZMachine
     end
 
     def peer_name
-      sock = @channel.socket
+      sock = @selectable_channel.socket
       [sock.port, sock.inet_address.host_address]
     end
 
     def sock_name
-      sock = channel.socket
+      sock = selectable_channel.socket
       [sock.local_port, sock.local_address.host_address]
     end
 
     def connect_pending=(value)
       @connect_pending = value
-      update_events
-    end
-
-    def watch_only=(value)
-      @watch_only = value
-      update_events
-    end
-
-    def notify_readable=(mode)
-      @notify_readable = mode
-      update_events
-    end
-
-    def notify_writable=(mode)
-      @notify_writable = mode
       update_events
     end
 
@@ -133,16 +115,11 @@ module ZMachine
     def current_events
       events = 0
 
-      if @watch_only
-        events |= SelectionKey::OP_READ if @notify_readable
-        events |= SelectionKey::OP_WRITE if @notify_writable
+      if @connect_pending
+        events |= SelectionKey::OP_CONNECT
       else
-        if @connect_pending
-          events |= SelectionKey::OP_CONNECT
-        else
-          events |= SelectionKey::OP_READ
-          events |= SelectionKey::OP_WRITE unless @outbound_queue.empty?
-        end
+        events |= SelectionKey::OP_READ
+        events |= SelectionKey::OP_WRITE unless @outbound_queue.empty?
       end
 
       return events
