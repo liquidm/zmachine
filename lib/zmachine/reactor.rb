@@ -172,23 +172,19 @@ module ZMachine
     def attach_io(io, watch_mode, handler=nil, *args)
       klass = _klass_from_handler(Connection, handler, *args)
 
-      notifiers = klass.public_instance_methods.any? do |m|
-        [:notify_readable, :notify_writable].include?(m.to_sym)
-      end
-      if !watch_mode and notifiers
-        raise ArgumentError, "notify_readable/writable with ZMachine.attach is not supported. Use ZMachine.watch(io){ |connection| connection.notify_readable = true }"
-      end
+      signature = next_signature
 
-      if io.respond_to?(:fileno)
-        fd = JRuby.runtime.getDescriptorByFileno(io.fileno).getChannel
-      else
-        fd = io
-      end
+      channel = Channel.new(io, signature, @selector)
+      channel.attached = true
+      channel.watch_only = watch_mode
 
-      connection = _attach_fd(fd, watch_mode, klass, *args)
+      connection = klass.new(signature, channel, self, *args)
       connection.instance_variable_set(:@io, io)
       connection.instance_variable_set(:@watch_mode, watch_mode)
-      connection.instance_variable_set(:@fd, fd)
+      connection.instance_variable_set(:@fd, nil) # API compat
+
+      @connections[signature] = connection
+      @new_connections << signature
 
       yield connection if block_given?
       connection
@@ -486,30 +482,6 @@ module ZMachine
       @selector.wakeup if @selector
     end
 
-    def get_peer_name(signature)
-      @connections[signature].peer_name
-    end
-
-    def get_sock_name(signature)
-      @connections[signature].sock_name
-    end
-
-    def set_notify_readable(signature, mode)
-      @connections[signature].notify_readable = mode
-    end
-
-    def set_notify_writable(signature, mode)
-      @connections[signature].notify_writable = mode
-    end
-
-    def is_notify_readable(signature)
-      @connections[signature].notify_readable
-    end
-
-    def is_notify_writable(signature)
-      @connections[signature].notify_writable
-    end
-
     def connection_count
       @connections.size + @acceptors.size
     end
@@ -532,42 +504,6 @@ module ZMachine
       handler::EM_CONNECTION_CLASS
     rescue NameError
       handler::const_set(:EM_CONNECTION_CLASS, Class.new(klass) {include handler})
-    end
-
-    def _attach_fd(fileno, watch_mode, klass, *args)
-      if fileno.java_kind_of?(java.nio.channels.Channel)
-        field = fileno.getClass.getDeclaredField('fdVal')
-        field.setAccessible(true)
-        fileno = field.get(fileno)
-      elsif fileno.is_a?(Fixnum)
-        raise "can't open STDIN as selectable in Java =(" if fileno == 0
-      else
-        raise ArgumentError, 'attach_fd requires Java Channel or POSIX fileno'
-      end
-
-      if fileno.is_a?(Fixnum)
-        fd = FileDescriptor.new
-        fd.fd = fileno
-
-        ch = SocketChannel.open
-        ch.configure_blocking(false)
-        ch.kill
-        ch.fd = fd
-        ch.fdVal = fileno
-        ch.state = ch.ST_CONNECTED
-      end
-
-      signature = next_signature
-
-      channel = Channel.new(ch, signature, @selector)
-      channel.attached = true
-      channel.watch_only = watch_mode
-
-      connection = klass.new(signature, channel, self, *args)
-      @connections[signature] = connection
-      @new_connections << signature
-
-      return connection
     end
 
     def _connection_unbound(channel)

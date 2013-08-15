@@ -4,8 +4,8 @@ module ZMachine
     attr_reader :channel
     attr_reader :signature
     attr_reader :watch_only
-    attr_reader :notify_readable
-    attr_reader :notify_writable
+    attr_accessor :notify_readable
+    attr_accessor :notify_writable
     attr_reader :connect_pending
     attr_accessor :attached
 
@@ -32,40 +32,10 @@ module ZMachine
         @channel_key = nil
       end
 
-      #if @attached
-      #  try {
-      #    f = channel.getClass().getDeclaredField("fd")
-      #    f.setAccessible(true)
-      #    fd = (FileDescriptor) f.get(channel)
-
-      #    f = fd.getClass().getDeclaredField("fd")
-      #    f.setAccessible(true)
-      #    f.set(fd, -1)
-      #  } catch (java.lang.NoSuchFieldException e) {
-      #    e.printStackTrace()
-      #  } catch (java.lang.IllegalAccessException e) {
-      #    e.printStackTrace()
-      #  }
-
-      #  return
-      #end
-
       @channel.close rescue nil
     end
 
     def cleanup
-      #if (@attached) {
-      #  Field f
-      #  try {
-      #    f = channel.getClass().getDeclaredField("fdVal")
-      #    f.setAccessible(true)
-      #    f.set(channel, -1)
-      #  } catch (java.lang.NoSuchFieldException e) {
-      #    e.printStackTrace()
-      #  } catch (java.lang.IllegalAccessException e) {
-      #    e.printStackTrace()
-      #  }
-      #}
       @channel = nil
     end
 

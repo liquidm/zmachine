@@ -78,35 +78,35 @@ module ZMachine
     end
 
     def get_peername
-      if peer = @reactor.peer_name(@signature)
-        Socket.pack_sockaddr_in(*peer)
+      if peer = @channel.peer_name
+        ::Socket.pack_sockaddr_in(*peer)
       end
     end
 
     def get_sockname
-      if sock_name = @reactor.get_sock_name(@signature)
-        Socket.pack_sockaddr_in(*sock_name)
+      if sock_name = @channel.sock_name
+        ::Socket.pack_sockaddr_in(*sock_name)
       end
     end
 
-    def reconnect server, port
-      ZMachine::reconnect server, port, self
+    def reconnect(server, port)
+      ZMachine::reconnect(server, port, self)
     end
 
-    def notify_readable= mode
-      @reactor.set_notify_readable(@signature, mode)
+    def notify_readable=(mode)
+      @channel.notify_readable = mode
     end
 
     def notify_readable?
-      @reactor.is_notify_readable(@signature)
+      @channel.notify_readable
     end
 
-    def notify_writable= mode
-      @reactor.set_notify_writable(@signature, mode)
+    def notify_writable=(mode)
+      @channel.notify_writable = mode
     end
 
     def notify_writable?
-      @reactor.is_notify_writable(@signature)
+      @channel.notify_writable
     end
 
     def pause
