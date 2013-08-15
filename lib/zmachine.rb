@@ -18,12 +18,10 @@ module ZMachine
 
   class << self
     extend Forwardable
-    def_delegator :instance, :add_periodic_timer
     def_delegator :instance, :add_shutdown_hook
     def_delegator :instance, :add_timer
     def_delegator :instance, :attach
     def_delegator :instance, :cancel_timer
-    def_delegator :instance, :connect
     def_delegator :instance, :connection_count
     def_delegator :instance, :error_handler
     def_delegator :instance, :next_tick
@@ -31,12 +29,18 @@ module ZMachine
     def_delegator :instance, :runnning?, :reactor_running?
     def_delegator :instance, :reconnect
     def_delegator :instance, :stop, :stop_event_loop
-    def_delegator :instance, :stop_server
+    def_delegator :instance, :close, :stop_server
     def_delegator :instance, :watch
   end
 
   def self._not_implemented
     raise RuntimeError.new("API call not implemented!")
+  end
+
+  def self.add_periodic_timer(*args, &block)
+    interval = args.shift
+    callback = args.shift || block
+    PeriodicTimer.new(interval, callback)
   end
 
   def self.bind_connect(bind_addr, bind_port, server, port = nil, handler = nil, *args)
@@ -45,6 +49,14 @@ module ZMachine
 
   def self.Callback(object = nil, method = nil, &blk)
     _not_implemented
+  end
+
+  def self.connect(server, port_or_type=nil, handler=nil, *args, &block)
+    if server =~ %r{\w+://}
+      instance.connect_zmq(server, port_or_type, handler, *args)
+    else
+      instance.connect_tcp(server, port_or_type, handler, *args, &block)
+    end
   end
 
   def self.connect_unix_domain(socketname, *args, &blk)
@@ -129,9 +141,9 @@ module ZMachine
 
   def self.start_server(server, port_or_type=nil, handler=nil, *args, &block)
     if server =~ %r{\w+://}
-      instance.start_zmq_server(server, port_or_type, handler, *args)
+      instance.bind_zmq(server, port_or_type, handler, *args)
     else
-      instance.start_tcp_server(server, port_or_type, handler, *args, &block)
+      instance.bind_tcp(server, port_or_type, handler, *args, &block)
     end
   end
 

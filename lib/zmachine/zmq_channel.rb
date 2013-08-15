@@ -32,20 +32,30 @@ module ZMachine
       # (troll)
       flags = ZMQ::SNDMORE | ZMQ::DONTWAIT
       flags &= ~ZMQ::SNDMORE unless d2
-      @socket.send(d1, flags)
-      return unless flags & ZMQ::SNDMORE
+      puts "send_data(): #{d1.inspect}, #{flags.inspect}"
+      @socket.send(d1.to_java_bytes, flags)
+      return if flags & ZMQ::SNDMORE == 0
       flags &= ~ZMQ::SNDMORE unless d3
-      @socket.send(d2, flags)
-      return unless flags & ZMQ::SNDMORE
+      puts "send_data(): #{d2.inspect}, #{flags.inspect}"
+      @socket.send(d2.to_java_bytes, flags)
+      return if flags & ZMQ::SNDMORE == 0
       flags &= ~ZMQ::SNDMORE unless d4
-      @socket.send(d3, flags)
-      return unless flags & ZMQ::SNDMORE
+      puts "send_data(): #{d3.inspect}, #{flags.inspect}"
+      @socket.send(d3.to_java_bytes, flags)
+      return if flags & ZMQ::SNDMORE == 0
       flags &= ~ZMQ::SNDMORE
-      @socket.send(d4, flags)
+      puts "send_data(): #{d4.inspect}, #{flags.inspect}"
+      @socket.send(d4.to_java_bytes, flags)
     end
 
     def read_inbound_data(buffer)
-      raise IOException.new("eof") if @selectable_channel.read(buffer) == -1
+      return if @socket.events & ZMQ::Poller::POLLIN == 0
+      data = []
+      loop do
+        data << String.from_java_bytes(@socket.recv)
+        break unless @socket.has_receive_more
+      end
+      data
     end
 
     def schedule_close(after_writing)

@@ -10,13 +10,17 @@ java_import org.zeromq.ZMQ
 #  printf "%8s %s:%-2d %10s %8s\n", event, file, line, id, classname
 #}
 
-class EchoServer < ZMachine::Connection
+class Echo < ZMachine::Connection
+  def connection_completed
+    send_data("foo")
+  end
+
   def receive_data(data)
-    send_data(*data)
+    puts data
+    send_data(Time.now.to_s)
   end
 end
 
-ZMachine.run do
-  ZMachine.start_server("tcp://*:10000", ZMQ::REP, EchoServer)
-  puts "machine running"
-end
+ZMachine.run {
+  ZMachine.connect("tcp://127.0.0.1:10000", ZMQ::REQ, Echo)
+}

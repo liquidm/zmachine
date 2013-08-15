@@ -28,15 +28,11 @@ module ZMachine
       @acceptors = {}
       @new_connections = []
       @unbound_connections = []
-      @detached_connections = []
       @next_signature = 0
       @shutdown_hooks = []
       @wrapped_exception = nil
       @next_tick_queue = ConcurrentLinkedQueue.new
       @running = false
-
-      @loop_breaker = AtomicBoolean.new
-      @loop_breaker.set(false)
 
       # don't use a direct buffer. Ruby doesn't seem to like them.
       @read_buffer = ByteBuffer.allocate(32*1024)
@@ -47,19 +43,18 @@ module ZMachine
     def run(callback=nil, shutdown_hook=nil, &block)
       @callback = callback || block
 
-      @shutdown_hooks.unshift(shutdown_hook) if shutdown_hook
+      add_shutdown_hook(shutdown_hook) if shutdown_hook
 
       begin
         @running = true
+
         add_timer(0, @callback) if @callback
-        if !@next_tick_queue.empty?
-          add_timer(0) { signal_loopbreak }
-        end
+
         @selector = Selector.open
         @run_reactor = true
 
         while @run_reactor
-          run_loopbreaks
+          run_deferred_callbacks
           break unless @run_reactor
           run_timers
           break unless @run_reactor
@@ -71,15 +66,9 @@ module ZMachine
 
         close
       ensure
-        until @shutdown_hooks.empty?
-          @shutdown_hooks.pop.call
-        end
-
-        begin
-          @reactor = nil
-        ensure
-          @next_tick_queue = ConcurrentLinkedQueue.new
-        end
+        @shutdown_hooks.pop.call until @shutdown_hooks.empty?
+        @reactor = nil
+        @next_tick_queue = ConcurrentLinkedQueue.new
         @running = false
       end
 
@@ -97,25 +86,19 @@ module ZMachine
     def add_timer(*args, &block)
       interval = args.shift
       callback = args.shift || block
-      if callback
-        signature = next_signature
-        deadline = java.util.Date.new.time + (interval.to_f * 1000).to_i
+      return unless callback
 
-        if @timers.contains_key(deadline)
-          @timers.get(deadline).add(signature)
-        else
-          @timers.put(deadline, [signature])
-        end
+      signature = next_signature
+      deadline = java.util.Date.new.time + (interval.to_f * 1000).to_i
 
-        @timer_callbacks[signature] = callback
-        signature
+      if @timers.contains_key(deadline)
+        @timers.get(deadline).add(signature)
+      else
+        @timers.put(deadline, [signature])
       end
-    end
 
-    def add_periodic_timer(*args, &block)
-      interval = args.shift
-      callback = args.shift || block
-      ZMachine::PeriodicTimer.new(interval, callback)
+      @timer_callbacks[signature] = callback
+      signature
     end
 
     def cancel_timer(timer_or_sig)
@@ -126,7 +109,7 @@ module ZMachine
       end
     end
 
-    def start_tcp_server(address, port, handler, *args, &block)
+    def bind_tcp(address, port, handler, *args, &block)
       klass = _klass_from_handler(Connection, handler, *args)
       signature = next_signature
       address = InetSocketAddress.new(address, port)
@@ -138,17 +121,17 @@ module ZMachine
       signature
     end
 
-    def start_zmq_server(address, type, handler, *args, &block)
+    def bind_zmq(address, type, handler, *args, &block)
       klass = _klass_from_handler(Connection, handler, *args)
       signature = next_signature
       socket = @context.create_socket(type)
       socket.bind(address)
-      socket.fd.register(@selector, SelectionKey::OP_ACCEPT, signature)
       channel = ZMQChannel.new(socket, signature, @selector)
-      acceptors = Acceptor.new(socket, klass, args, block)
+      acceptor = Acceptor.new(socket, klass, args, block)
       connection = acceptor.klass.new(signature, channel, self, *acceptor.args)
       @connections[signature] = connection
       @acceptors[signature] = acceptor # for close
+      channel.register
       signature
     end
 
@@ -156,34 +139,28 @@ module ZMachine
       @acceptors.remove(signature).close
     end
 
-    def connect(server, port=nil, handler=nil, *args, &block)
-      begin
-        port = Integer(port)
-      rescue ArgumentError, TypeError
-        args.unshift handler if handler
-        handler = port
-        port = nil
-      end if port
-
+    def connect_tcp(server, port, handler=nil, *args, &block)
       klass = _klass_from_handler(Connection, handler, *args)
-
-      connection = connect_tcp_server(server, port, nil, klass, *args)
-      yield connection if block_given?
-      connection
+      _connect_tcp(server, port, nil, klass, *args, &block)
     end
 
-    def reconnect(server, port, connection)
+    def connect_zmq(server, type, handler=nil, *args)
+      klass = _klass_from_handler(Connection, handler, *args)
+      _connect_zmq(server, type, klass, *args)
+    end
+
+    def reconnect(server, port, connection, &block)
       return connection if @connections.has_key?(connection.signature)
-
-      connection = connect_tcp_server(server, port, connection)
-      yield connection if block_given?
-      connection
+      _connect_tcp(server, port, connection, &block)
     end
+
+    def send_data(signature, d1, d2, d3, d4)
+      @connections[signature].channel.send_data(d1, d2, d3, d4)
+    end
+
+    private
 
     def add_new_connections
-      @detached_connections.each(&:cleanup)
-      @detached_connections.clear
-
       @new_connections.each do |signature|
         channel = @connections[signature].channel
         next unless channel
@@ -285,7 +262,9 @@ module ZMachine
 
       begin
         data = channel.read_inbound_data(@read_buffer)
-        connection = @connections[signature] or raise ConnectionNotBound, "received data #{buffer} for unknown signature: #{signature}"
+        puts "is_readable(): data=#{data.inspect}"
+        return unless data
+        connection = @connections[signature] or raise ConnectionNotBound, "received data #{data} for unknown signature: #{signature}"
         connection.receive_data(data)
       rescue IOException => e
         @unbound_connections << signature
@@ -329,16 +308,6 @@ module ZMachine
         _connection_unbound(channel)
       end
       @connections.clear
-
-      @detached_connections.each do |connection|
-        connection.cleanup
-      end
-      @detached_connections.clear
-    end
-
-    def run_loopbreaks
-      return unless @loop_breaker.get_and_set(false)
-      run_deferred_callbacks
     end
 
     def run_deferred_callbacks
@@ -354,9 +323,8 @@ module ZMachine
       end
     end
 
-    def next_tick(pr=nil, &block)
-      raise ArgumentError, "no proc or block given" unless ((pr && pr.respond_to?(:call)) or block)
-      @next_tick_queue << ( pr || block )
+    def next_tick(callback=nil, &block)
+      @next_tick_queue << (callback || block)
       signal_loopbreak if running?
     end
 
@@ -388,11 +356,7 @@ module ZMachine
       end
     end
 
-    def send_data(signature, d1, d2, d3, d4)
-      @connections[signature].channel.send_data(d1, d2, d3, d4)
-    end
-
-    def connect_tcp_server(address, port, connection=nil, klass=nil, *args)
+    def _connect_tcp(address, port, connection=nil, klass=nil, *args, &block)
       signature = next_signature
 
       begin
@@ -403,32 +367,49 @@ module ZMachine
         address = InetSocketAddress.new(address, port)
 
         if socket_channel.connect(address)
-          # Connection returned immediately. Can happen with localhost connections.
-          # WARNING, this code is untested due to lack of available test conditions.
-          # Ought to be be able to come here from a localhost connection, but that
-          # doesn't happen on Linux. (Maybe on FreeBSD?)
+          # Connection returned immediately. Can happen with localhost
+          # connections.
+          # WARNING, this code is untested due to lack of available test
+          # conditions.  Ought to be be able to come here from a localhost
+          # connection, but that doesn't happen on Linux. (Maybe on FreeBSD?)
           # The reason for not handling this until we can test it is that we
-          # really need to return from this function WITHOUT triggering any EM events.
-          # That's because until the user code has seen the signature we generated here,
-          # it won't be able to properly dispatch them. The C++ EM deals with this
-          # by setting pending mode as a flag in ALL eventable descriptors and making
-          # the descriptor select for writable. Then, it can send UNBOUND and
-          # CONNECTION_COMPLETED on the next pass through the loop, because writable will
-          # fire.
+          # really need to return from this function WITHOUT triggering any EM
+          # events.  That's because until the user code has seen the signature
+          # we generated here, it won't be able to properly dispatch them. The
+          # C++ EM deals with this by setting pending mode as a flag in ALL
+          # eventable descriptors and making the descriptor select for
+          # writable. Then, it can send UNBOUND and CONNECTION_COMPLETED on the
+          # next pass through the loop, because writable will fire.
           raise RuntimeError.new("immediate-connect unimplemented")
-        else
-          channel.connect_pending = true
-          connection ||= klass.new(signature, channel, self, *args)
-          connection.signature = signature
-          connection.channel = channel
-          @connections[signature] = connection
-          @new_connections << signature
         end
+
+        channel.connect_pending = true
+        connection ||= klass.new(signature, channel, self, *args)
+        connection.signature = signature
+        connection.channel = channel
+        @connections[signature] = connection
+        @new_connections << signature
       rescue IOException => e
-        # Can theoretically come here if a connect failure can be determined immediately.
-        # I don't know how to make that happen for testing purposes.
+        # Can theoretically come here if a connect failure can be determined
+        # immediately.  I don't know how to make that happen for testing
+        # purposes.
         raise RuntimeError.new("immediate-connect unimplemented: " + e.toString())
       end
+      yield connection if block_given?
+      return connection
+    end
+
+    def _connect_zmq(address, type, klass=nil, *args, &block)
+      signature = next_signature
+      socket = @context.create_socket(type)
+      socket.connect(address)
+      channel = ZMQChannel.new(socket, signature, @selector)
+      #channel.connect_pending = true
+      connection = klass.new(signature, channel, self, *args)
+      @connections[signature] = connection
+      @new_connections << signature
+      yield connection if block_given?
+      connection.connection_completed
       return connection
     end
 
@@ -440,7 +421,6 @@ module ZMachine
     end
 
     def signal_loopbreak
-      @loop_breaker.set(true)
       @selector.wakeup if @selector
     end
 
@@ -491,9 +471,6 @@ module ZMachine
         end
       end
       channel.close
-      if channel and channel.attached
-        @detached_connections << channel
-      end
     end
 
   end

@@ -4,7 +4,7 @@ module ZMachine
 
   class Connection
     attr_accessor :signature
-    attr_reader :channel
+    attr_accessor :channel
 
     alias original_method method
 
