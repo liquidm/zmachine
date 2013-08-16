@@ -53,9 +53,8 @@ module ZMachine
       close_connection true
     end
 
-    # TODO add more d attributes (badpokerface)
-    def send_data(d1, d2=nil, d3=nil, d4=nil)
-      @reactor.send_data(@signature, d1, d2, d3, d4)
+    def send_data(data)
+      @reactor.send_data(@signature, data)
     end
 
     def error?

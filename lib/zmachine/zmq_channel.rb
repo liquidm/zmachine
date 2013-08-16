@@ -1,3 +1,5 @@
+java_import org.zeromq.ZMsg
+
 module ZMachine
   class ZMQChannel
 
@@ -28,34 +30,14 @@ module ZMachine
       @selectable_channel = nil
     end
 
-    def send_data(d1, d2, d3, d4)
-      # (troll)
-      flags = ZMQ::SNDMORE | ZMQ::DONTWAIT
-      flags &= ~ZMQ::SNDMORE unless d2
-      puts "send_data(): #{d1.inspect}, #{flags.inspect}"
-      @socket.send(d1.to_java_bytes, flags)
-      return if flags & ZMQ::SNDMORE == 0
-      flags &= ~ZMQ::SNDMORE unless d3
-      puts "send_data(): #{d2.inspect}, #{flags.inspect}"
-      @socket.send(d2.to_java_bytes, flags)
-      return if flags & ZMQ::SNDMORE == 0
-      flags &= ~ZMQ::SNDMORE unless d4
-      puts "send_data(): #{d3.inspect}, #{flags.inspect}"
-      @socket.send(d3.to_java_bytes, flags)
-      return if flags & ZMQ::SNDMORE == 0
-      flags &= ~ZMQ::SNDMORE
-      puts "send_data(): #{d4.inspect}, #{flags.inspect}"
-      @socket.send(d4.to_java_bytes, flags)
+    def send_data(data)
+      puts "send_data(#{data.inspect})"
+      data.java_send(:send, [org.zeromq.ZMQ::Socket], @socket)
     end
 
     def read_inbound_data(buffer)
       return if @socket.events & ZMQ::Poller::POLLIN == 0
-      data = []
-      loop do
-        data << String.from_java_bytes(@socket.recv)
-        break unless @socket.has_receive_more
-      end
-      data
+      ZMsg.recv_msg(@socket)
     end
 
     def schedule_close(after_writing)

@@ -12,11 +12,15 @@ java_import org.zeromq.ZMQ
 
 class EchoServer < ZMachine::Connection
   def receive_data(data)
-    send_data(*data)
+    puts "recv(#{data.to_a.map {|f| String.from_java_bytes(f.data) }.inspect})"
+    #sleep(0.5)
+    #send_data(data)
   end
 end
 
 ZMachine.run do
-  ZMachine.start_server("tcp://*:10000", ZMQ::REP, EchoServer)
+  ZMachine.start_server("tcp://*:10000", ZMQ::PULL, EchoServer)
+  #ZMachine.start_server("tcp://*:10000", ZMQ::REP, EchoServer)
+  #ZMachine.start_server("0.0.0.0", 10000, EchoServer)
   puts "machine running"
 end

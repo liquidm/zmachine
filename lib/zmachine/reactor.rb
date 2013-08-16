@@ -154,8 +154,8 @@ module ZMachine
       _connect_tcp(server, port, connection, &block)
     end
 
-    def send_data(signature, d1, d2, d3, d4)
-      @connections[signature].channel.send_data(d1, d2, d3, d4)
+    def send_data(signature, data)
+      @connections[signature].channel.send_data(data)
     end
 
     private

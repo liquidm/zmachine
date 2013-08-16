@@ -31,9 +31,9 @@ module ZMachine
       @selectable_channel = nil
     end
 
-    def send_data(d1, d2, d3, d4)
+    def send_data(data)
       return if @close_scheduled
-      buffer = ByteBuffer.wrap(d1.to_java_bytes)
+      buffer = ByteBuffer.wrap(data.to_java_bytes)
       if buffer.remaining() > 0
         @outbound_queue << buffer
         update_events
