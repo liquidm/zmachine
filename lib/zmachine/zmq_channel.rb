@@ -1,20 +1,15 @@
 java_import org.zeromq.ZMsg
 
+require 'zmachine/channel'
+
 module ZMachine
-  class ZMQChannel
+  class ZMQChannel < Channel
 
     attr_reader :selectable_channel
-    attr_reader :signature
 
     def initialize(socket, signature, selector)
-      @socket = socket
+      super
       @selectable_channel = socket.fd
-      @signature = signature
-      @selector = selector
-    end
-
-    def register
-      @channel_key ||= @selectable_channel.register(@selector, SelectionKey::OP_READ, self)
     end
 
     def close
@@ -31,13 +26,16 @@ module ZMachine
     end
 
     def send_data(data)
-      puts "send_data(#{data.inspect})"
       data.java_send(:send, [org.zeromq.ZMQ::Socket], @socket)
     end
 
     def read_inbound_data(buffer)
-      return if @socket.events & ZMQ::Poller::POLLIN == 0
+      return unless has_more?
       ZMsg.recv_msg(@socket)
+    end
+
+    def has_more?
+      @socket.events & ZMQ::Poller::POLLIN == ZMQ::Poller::POLLIN
     end
 
     def schedule_close(after_writing)
@@ -52,6 +50,10 @@ module ZMachine
     def sock_name
       sock = selectable_channel.socket
       [sock.local_port, sock.local_address.host_address]
+    end
+
+    def current_events
+      SelectionKey::OP_READ
     end
 
   end

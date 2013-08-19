@@ -4,5 +4,6 @@ source 'https://rubygems.org'
 gemspec
 
 gem 'ruby-debug'
+gem 'ruby-debug-ide'
 gem 'brice'
 gem 'awesome_print'

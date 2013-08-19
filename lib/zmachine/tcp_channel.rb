@@ -1,21 +1,26 @@
+java_import java.nio.channels.ServerSocketChannel
+
+require 'zmachine/channel'
+
 module ZMachine
-  class TCPChannel
+  class TCPChannel < Channel
 
     attr_reader :selectable_channel
-    attr_reader :signature
     attr_reader :connect_pending
 
-    def initialize(selectable_channel, signature, selector)
-      @selectable_channel = selectable_channel
-      @signature = signature
-      @selector = selector
+    def initialize(socket, signature, selector)
+      super
+      @selectable_channel = socket
       @close_scheduled = false
       @connect_pending = false
       @outbound_queue = []
     end
 
-    def register
-      @channel_key ||= @selectable_channel.register(@selector, current_events, self)
+    def accept(client_signature)
+      client_socket = socket.accept
+      return unless client_socket
+      client_socket.configure_blocking(false)
+      TCPChannel.new(client_socket, client_signature, @selector)
     end
 
     def close
@@ -110,9 +115,18 @@ module ZMachine
       if @channel_key.interest_ops != events
         @channel_key.interest_ops(events)
       end
+      puts "update_events(): #{events.inspect}, #{current_events.inspect}"
+    end
+
+    def has_more?
+      false
     end
 
     def current_events
+      if @socket.respond_to?(:accept)
+        return SelectionKey::OP_ACCEPT
+      end
+
       events = 0
 
       if @connect_pending
@@ -121,6 +135,8 @@ module ZMachine
         events |= SelectionKey::OP_READ
         events |= SelectionKey::OP_WRITE unless @outbound_queue.empty?
       end
+
+      puts "current_events(): #{events.inspect}"
 
       return events
     end

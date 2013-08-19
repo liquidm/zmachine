@@ -1,15 +1,11 @@
 module ZMachine
-  class Acceptor < Struct.new(:selectable_channel, :klass, :args, :callback)
-    def close
-      selectable_channel.close
+  class Acceptor
+    attr_reader :klass
+    attr_reader :args
+
+    def initialize(channel, klass, *args, &block)
+      @klass, @args = klass, args
     end
 
-    def socket
-      if selectable_channel.java_is_a?(org.zeromq.Socket)
-        selectable_channel.fd
-      else
-        selectable_channel
-      end
-    end
   end
 end

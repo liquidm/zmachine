@@ -1,60 +1,44 @@
 module ZMachine
-  class FileNotFoundException < Exception
-  end
-
   class Connection
-    attr_accessor :signature
+
     attr_accessor :channel
+
+    extend Forwardable
+    def_delegator :@channel, :close_connection
+    def_delegator :@channel, :get_sock_opt
+    def_delegator :@channel, :set_sock_opt
+    def_delegator :@channel, :send_data
 
     alias original_method method
 
-    def self.new(signature, channel, reactor, *args)
+    def self.new(channel, *args, &block)
       allocate.instance_eval do
-        @signature = signature
         @channel = channel
-        @reactor = reactor
-        initialize(*args)
+        initialize(*args, &block)
         post_init
         self
       end
     end
 
-    def initialize(*args)
+    def initialize(*args, &block)
     end
+
+    # callbacks
 
     def post_init
     end
 
     def receive_data data
-      puts "............>>>#{data.length}"
     end
 
     def unbind
     end
 
-    def close_connection after_writing = false
-      @reactor.close_connection(@signature, after_writing)
-    end
-
-    def detach
-      @reactor.unbound_connections << @signature
-      @channel.channel.fdVal
-    end
-
-    def get_sock_opt(level, option)
-      ZMachine::_get_sock_opt @signature, level, option
-    end
-
-    def set_sock_opt(level, optname, optval)
-      ZMachine::_set_sock_opt @signature, level, optname, optval
+    def connection_completed
     end
 
     def close_connection_after_writing
-      close_connection true
-    end
-
-    def send_data(data)
-      @reactor.send_data(@signature, data)
+      close_connection(true)
     end
 
     def error?
@@ -71,9 +55,6 @@ module ZMachine
       end
     end
 
-    def connection_completed
-    end
-
     def get_peername
       if peer = @channel.peer_name
         ::Socket.pack_sockaddr_in(*peer)
@@ -88,34 +69,6 @@ module ZMachine
 
     def reconnect(server, port)
       ZMachine::reconnect(server, port, self)
-    end
-
-    def notify_readable=(mode)
-      @channel.notify_readable = mode
-    end
-
-    def notify_readable?
-      @channel.notify_readable
-    end
-
-    def notify_writable=(mode)
-      @channel.notify_writable = mode
-    end
-
-    def notify_writable?
-      @channel.notify_writable
-    end
-
-    def pause
-      ZMachine::_pause_connection @signature
-    end
-
-    def resume
-      ZMachine::_resume_connection @signature
-    end
-
-    def paused?
-      ZMachine::_connection_paused? @signature
     end
   end
 end
