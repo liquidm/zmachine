@@ -5,15 +5,23 @@ require 'zmachine/channel'
 module ZMachine
   class TCPChannel < Channel
 
-    attr_reader :selectable_channel
     attr_reader :connect_pending
 
-    def initialize(socket, signature, selector)
-      super
-      @selectable_channel = socket
+    def initialize(signature, selector)
+      super(signature, selector)
       @close_scheduled = false
       @connect_pending = false
-      @outbound_queue = []
+    end
+
+    def register
+      @channel_key ||= @socket.register(@selector, current_events, self)
+    end
+
+    def bind(address, port)
+      address = InetSocketAddress.new(address, port)
+      @socket = ServerSocketChannel.open
+      @socket.configure_blocking(false)
+      @socket.bind(address)
     end
 
     def accept(client_signature)
@@ -23,17 +31,36 @@ module ZMachine
       TCPChannel.new(client_socket, client_signature, @selector)
     end
 
+    def connect(address, port)
+      address = InetSocketAddress.new(address, port)
+      @socket = SocketChannel.open
+      @socket.configure_blocking(false)
+
+      if socket.connect(address)
+        # Connection returned immediately. Can happen with localhost
+        # connections.
+        # WARNING, this code is untested due to lack of available test
+        # conditions.  Ought to be be able to come here from a localhost
+        # connection, but that doesn't happen on Linux. (Maybe on FreeBSD?)
+        # The reason for not handling this until we can test it is that we
+        # really need to return from this function WITHOUT triggering any EM
+        # events.  That's because until the user code has seen the signature
+        # we generated here, it won't be able to properly dispatch them. The
+        # C++ EM deals with this by setting pending mode as a flag in ALL
+        # eventable descriptors and making the descriptor select for
+        # writable. Then, it can send UNBOUND and CONNECTION_COMPLETED on the
+        # next pass through the loop, because writable will fire.
+        raise RuntimeError.new("immediate-connect unimplemented")
+      end
+    end
+
     def close
       if @channel_key
         @channel_key.cancel
         @channel_key = nil
       end
 
-      @selectable_channel.close rescue nil
-    end
-
-    def cleanup
-      @selectable_channel = nil
+      @socket.close rescue nil
     end
 
     def send_data(data)
@@ -47,7 +74,7 @@ module ZMachine
 
     def read_inbound_data(buffer)
       buffer.clear
-      raise IOException.new("eof") if @selectable_channel.read(buffer) == -1
+      raise IOException.new("eof") if @socket.read(buffer) == -1
       buffer.flip
       return if buffer.limit == 0
       String.from_java_bytes(buffer.array[buffer.position...buffer.limit])
@@ -56,7 +83,7 @@ module ZMachine
     def write_outbound_data
       until @outbound_queue.empty?
         buffer = @outbound_queue.first
-        selectable_channel.write(buffer) if buffer.remaining > 0
+        @socket.write(buffer) if buffer.remaining > 0
 
         # Did we consume the whole outbound buffer? If yes,
         # pop it off and keep looping. If no, the outbound network
@@ -76,7 +103,7 @@ module ZMachine
     end
 
     def finish_connecting
-      @selectable_channel.finish_connect
+      @socket.finish_connect
       @connect_pending = false
       update_events
       return true
@@ -94,13 +121,14 @@ module ZMachine
       end
     end
 
+    # TODO: fix these
     def peer_name
-      sock = @selectable_channel.socket
+      sock = @socket.socket
       [sock.port, sock.inet_address.host_address]
     end
 
     def sock_name
-      sock = selectable_channel.socket
+      sock = @socket.socket
       [sock.local_port, sock.local_address.host_address]
     end
 

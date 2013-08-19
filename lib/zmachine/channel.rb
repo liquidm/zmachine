@@ -6,14 +6,10 @@ module ZMachine
     attr_reader :selector
     attr_accessor :handler
 
-    def initialize(socket, signature, selector)
-      @socket = socket
+    def initialize(signature, selector)
       @signature = signature
       @selector = selector
-    end
-
-    def register
-      @channel_key ||= @selectable_channel.register(@selector, current_events, self)
+      @outbound_queue = []
     end
 
   end

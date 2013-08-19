@@ -11,12 +11,14 @@ module ZMachine
   class Unsupported < RuntimeError; end
 
   def self.instance
+    @context ||= ZContext.new
     @reactor ||= ThreadLocal.new
-    @reactor.set(Reactor.new) unless @reactor.get
+    @reactor.set(Reactor.new(@context)) unless @reactor.get
     @reactor.get
   end
 
   class << self
+    attr_accessor :context
     extend Forwardable
     def_delegator :instance, :add_shutdown_hook
     def_delegator :instance, :add_timer
@@ -28,6 +30,7 @@ module ZMachine
     def_delegator :instance, :run
     def_delegator :instance, :runnning?, :reactor_running?
     def_delegator :instance, :reconnect
+    def_delegator :instance, :bind, :start_server
     def_delegator :instance, :stop, :stop_event_loop
     def_delegator :instance, :close, :stop_server
     def_delegator :instance, :watch
@@ -137,14 +140,6 @@ module ZMachine
 
   def self.spawn(&block)
     _not_implemented
-  end
-
-  def self.start_server(server, port_or_type=nil, handler=nil, *args, &block)
-    if server =~ %r{\w+://}
-      instance.bind_zmq(server, port_or_type, handler, *args)
-    else
-      instance.bind_tcp(server, port_or_type, handler, *args, &block)
-    end
   end
 
   def self.start_unix_domain_server(filename, *args, &block)

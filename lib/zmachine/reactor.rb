@@ -21,7 +21,7 @@ require 'zmachine/zmq_channel'
 module ZMachine
   class Reactor
 
-    def initialize
+    def initialize(context)
       @timers = TreeMap.new
       @timer_callbacks = {}
       @channels = []
@@ -35,8 +35,7 @@ module ZMachine
       # don't use a direct buffer. Ruby doesn't seem to like them.
       @read_buffer = ByteBuffer.allocate(32*1024)
 
-      @context = ZContext.new
-      @zmq_channels = []
+      @context = context
     end
 
     def run(callback=nil, shutdown_hook=nil, &block)
@@ -106,14 +105,19 @@ module ZMachine
       end
     end
 
+    def bind(server, port_or_type=nil, handler=nil, *args, &block)
+      if server =~ %r{\w+://}
+        bind_zmq(server, port_or_type, handler, *args, &block)
+      else
+        bind_tcp(server, port_or_type, handler, *args, &block)
+      end
+    end
+
     def bind_tcp(address, port, handler, *args, &block)
       klass = _klass_from_handler(Connection, handler)
       signature = next_signature
-      address = InetSocketAddress.new(address, port)
-      socket = ServerSocketChannel.open
-      socket.configure_blocking(false)
-      socket.bind(address)
-      channel = TCPChannel.new(socket, signature, @selector)
+      channel = TCPChannel.new(signature, @selector)
+      channel.bind(address, port)
       add_channel(channel, Acceptor, klass, *args, &block)
       signature
     end
@@ -121,16 +125,15 @@ module ZMachine
     def bind_zmq(address, type, handler, *args, &block)
       klass = _klass_from_handler(Connection, handler)
       signature = next_signature
-      socket = @context.create_socket(type)
-      socket.bind(address)
-      channel = ZMQChannel.new(socket, signature, @selector)
+      channel = ZMQChannel.new(type, signature, @selector)
+      channel.bind(address)
       add_channel(channel, klass, *args, &block)
       signature
     end
 
-    def close(signature)
-      @channels.remove(signature).close
-    end
+    #def close(signature)
+    #  @channels.remove(signature).close
+    #end
 
     def connect_tcp(server, port, handler=nil, *args, &block)
       klass = _klass_from_handler(Connection, handler, *args)
@@ -216,6 +219,7 @@ module ZMachine
 
       @channels.each do |channel|
         is_readable(channel) if channel.has_more?
+        is_writable(channel) if channel.can_send?
       end
     end
 
@@ -223,7 +227,7 @@ module ZMachine
       server_signature = channel.signature
       client_channel = channel.accept(next_signature)
       acceptor = channel.handler
-      add_channel(client_channel, acceptor.klass, *acceptor.args)
+      add_channel(client_channel, acceptor.klass, *acceptor.args, &acceptor.callback)
     rescue IOException => e
       channel.close
     end
@@ -314,49 +318,20 @@ module ZMachine
 
     def _connect_tcp(address, port, connection=nil, klass=nil, *args, &block)
       signature = next_signature
-
-      begin
-        address = InetSocketAddress.new(address, port)
-        socket = SocketChannel.open
-        socket.configure_blocking(false)
-
-        if socket.connect(address)
-          # Connection returned immediately. Can happen with localhost
-          # connections.
-          # WARNING, this code is untested due to lack of available test
-          # conditions.  Ought to be be able to come here from a localhost
-          # connection, but that doesn't happen on Linux. (Maybe on FreeBSD?)
-          # The reason for not handling this until we can test it is that we
-          # really need to return from this function WITHOUT triggering any EM
-          # events.  That's because until the user code has seen the signature
-          # we generated here, it won't be able to properly dispatch them. The
-          # C++ EM deals with this by setting pending mode as a flag in ALL
-          # eventable descriptors and making the descriptor select for
-          # writable. Then, it can send UNBOUND and CONNECTION_COMPLETED on the
-          # next pass through the loop, because writable will fire.
-          raise RuntimeError.new("immediate-connect unimplemented")
-        end
-
-        channel = TCPChannel.new(socket, signature, @selector)
-        channel.connect_pending = true
-        add_channel(channel, klass, *args, &block)
-      rescue IOException => e
-        # Can theoretically come here if a connect failure can be determined
-        # immediately.  I don't know how to make that happen for testing
-        # purposes.
-        raise RuntimeError.new("immediate-connect unimplemented: " + e.toString())
-      end
-      return channel.handler
+      channel = TCPChannel.new(signature, @selector)
+      channel.connect(address, port)
+      channel.connect_pending = true
+      add_channel(channel, klass, *args, &block)
+      signature
     end
 
     def _connect_zmq(address, type, klass=nil, *args, &block)
       signature = next_signature
-      socket = @context.create_socket(type)
-      socket.connect(address)
-      channel = ZMQChannel.new(socket, signature, @selector)
+      channel = ZMQChannel.new(type, signature, @selector)
       add_channel(channel, klass, *args, &block)
+      channel.connect(address)
       channel.handler.connection_completed
-      return channel.handler
+      signature
     end
 
     #def close_connection(signature, after_writing)
