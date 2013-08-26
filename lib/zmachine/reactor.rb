@@ -21,7 +21,7 @@ require 'zmachine/zmq_channel'
 module ZMachine
   class Reactor
 
-    def initialize(context)
+    def initialize
       @timers = TreeMap.new
       @timer_callbacks = {}
       @channels = []
@@ -34,8 +34,6 @@ module ZMachine
 
       # don't use a direct buffer. Ruby doesn't seem to like them.
       @read_buffer = ByteBuffer.allocate(32*1024)
-
-      @context = context
     end
 
     def add_shutdown_hook(&block)
@@ -51,7 +49,7 @@ module ZMachine
       deadline = java.util.Date.new.time + (interval.to_f * 1000).to_i
 
       if @timers.contains_key(deadline)
-        @timers.get(deadline).add(signature)
+        @timers.get(deadline) << signature
       else
         @timers.put(deadline, [signature])
       end
@@ -69,8 +67,8 @@ module ZMachine
     end
 
     def connect(server, port_or_type=nil, handler=nil, *args, &block)
-      if server =~ %r{\w+://}
-        _connect_zmq(server, port_or_type, handler, *args)
+      if server.nil? or server =~ %r{\w+://}
+        _connect_zmq(server, port_or_type, handler, *args, &block)
       else
         _connect_tcp(server, port_or_type, handler, *args, &block)
       end
@@ -120,6 +118,7 @@ module ZMachine
         @shutdown_hooks.pop.call until @shutdown_hooks.empty?
         @next_tick_queue = ConcurrentLinkedQueue.new
         @running = false
+        ZMachine.context.destroy
       end
     end
 
@@ -168,12 +167,13 @@ module ZMachine
       add_channel(channel, klass, *args, &block)
     end
 
-    def _connect_zmq(address, type, handler=nil, *args)
+    def _connect_zmq(address, type, handler=nil, *args, &block)
       klass = _klass_from_handler(Connection, handler)
       channel = ZMQChannel.new(type, @selector)
-      add_channel(channel, klass, *args)
+      add_channel(channel, klass, *args, &block)
       channel.connect(address)
       channel.handler.connection_completed
+      channel
     end
 
     def check_io

@@ -1,6 +1,9 @@
 require 'forwardable'
+
 require 'zmachine/connection'
+require 'zmachine/deferrable'
 require 'zmachine/reactor'
+require 'zmachine/timers'
 
 java_import java.lang.ThreadLocal
 
@@ -10,29 +13,33 @@ module ZMachine
   class UnknownTimerFired < RuntimeError; end
   class Unsupported < RuntimeError; end
 
-  def self.instance
-    @context ||= ZContext.new
+  def self.reactor
     @reactor ||= ThreadLocal.new
-    @reactor.set(Reactor.new(@context)) unless @reactor.get
+    @reactor.set(Reactor.new) unless @reactor.get
     @reactor.get
   end
 
+  def self.context
+    @context ||= ThreadLocal.new
+    @context.set(ZContext.new) unless @context.get
+    @context.get
+  end
+
   class << self
-    attr_accessor :context
     extend Forwardable
-    def_delegator :instance, :add_shutdown_hook
-    def_delegator :instance, :add_timer
-    def_delegator :instance, :cancel_timer
-    def_delegator :instance, :connect
-    def_delegator :instance, :connection_count
-    def_delegator :instance, :error_handler
-    def_delegator :instance, :next_tick
-    def_delegator :instance, :run
-    def_delegator :instance, :reactor_running?
-    def_delegator :instance, :reconnect
-    def_delegator :instance, :start_server
-    def_delegator :instance, :stop_event_loop
-    def_delegator :instance, :stop_server
+    def_delegator :reactor, :add_shutdown_hook
+    def_delegator :reactor, :add_timer
+    def_delegator :reactor, :cancel_timer
+    def_delegator :reactor, :connect
+    def_delegator :reactor, :connection_count
+    def_delegator :reactor, :error_handler
+    def_delegator :reactor, :next_tick
+    def_delegator :reactor, :run
+    def_delegator :reactor, :reactor_running?
+    def_delegator :reactor, :reconnect
+    def_delegator :reactor, :start_server
+    def_delegator :reactor, :stop_event_loop
+    def_delegator :reactor, :stop_server
   end
 
   def self._not_implemented

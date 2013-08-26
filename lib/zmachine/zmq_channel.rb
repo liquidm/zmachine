@@ -12,6 +12,7 @@ module ZMachine
     def initialize(type, selector)
       super(selector)
       @socket = ZMachine.context.create_socket(type)
+      @socket.linger = 0
       @socket.set_router_mandatory(true) if type == ZMQ::ROUTER
     end
 
@@ -37,7 +38,7 @@ module ZMachine
         @channel_key = nil
       end
 
-      @socket.close rescue nil
+      @socket.close
     end
 
     def send_data(data)

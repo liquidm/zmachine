@@ -143,7 +143,6 @@ module ZMachine
       if @channel_key.interest_ops != events
         @channel_key.interest_ops(events)
       end
-      puts "update_events(): #{events.inspect}, #{current_events.inspect}"
     end
 
     def has_more?
@@ -163,8 +162,6 @@ module ZMachine
         events |= SelectionKey::OP_READ
         events |= SelectionKey::OP_WRITE unless @outbound_queue.empty?
       end
-
-      puts "current_events(): #{events.inspect}"
 
       return events
     end
