@@ -16,7 +16,7 @@ $i = 0
 
 class ZMQEcho < ZMachine::Connection
   def connection_completed
-     loop { send_msg }
+    send_msg
   end
 
   def receive_data(data)
@@ -45,7 +45,7 @@ class TCPEcho < ZMachine::Connection
 end
 
 ZMachine.run {
-  ZMachine.connect("tcp://127.0.0.1:10000", ZMQ::PUSH, ZMQEcho) do |handler|
+  ZMachine.connect("tcp://127.0.0.1:10000", ZMQ::ROUTER, ZMQEcho) do |handler|
     handler.channel.identity = "client"
   end
   #ZMachine.connect("127.0.0.1", 10000, TCPEcho)

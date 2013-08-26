@@ -38,43 +38,6 @@ module ZMachine
       @context = context
     end
 
-    def run(callback=nil, shutdown_hook=nil, &block)
-      @callback = callback || block
-
-      add_shutdown_hook(shutdown_hook) if shutdown_hook
-
-      begin
-        @running = true
-
-        add_timer(0, @callback) if @callback
-
-        @selector = Selector.open
-        @run_reactor = true
-
-        while @run_reactor
-          run_deferred_callbacks
-          break unless @run_reactor
-          run_timers
-          break unless @run_reactor
-          remove_unbound_channels
-          check_io
-          add_new_channels
-          process_io
-        end
-
-        close
-      ensure
-        @shutdown_hooks.pop.call until @shutdown_hooks.empty?
-        @reactor = nil
-        @next_tick_queue = ConcurrentLinkedQueue.new
-        @running = false
-      end
-    end
-
-    def error_handler(callback = nil, &block)
-      @error_handler = callback || block
-    end
-
     def add_shutdown_hook(&block)
       @shutdown_hooks << block
     end
@@ -105,71 +68,112 @@ module ZMachine
       end
     end
 
-    def bind(server, port_or_type=nil, handler=nil, *args, &block)
+    def connect(server, port_or_type=nil, handler=nil, *args, &block)
       if server =~ %r{\w+://}
-        bind_zmq(server, port_or_type, handler, *args, &block)
+        _connect_zmq(server, port_or_type, handler, *args)
       else
-        bind_tcp(server, port_or_type, handler, *args, &block)
+        _connect_tcp(server, port_or_type, handler, *args, &block)
       end
     end
 
-    def bind_tcp(address, port, handler, *args, &block)
-      klass = _klass_from_handler(Connection, handler)
-      signature = next_signature
-      channel = TCPChannel.new(signature, @selector)
-      channel.bind(address, port)
-      add_channel(channel, Acceptor, klass, *args, &block)
-      signature
+    def connection_count
+      @channels.size
     end
 
-    def bind_zmq(address, type, handler, *args, &block)
-      klass = _klass_from_handler(Connection, handler)
-      signature = next_signature
-      channel = ZMQChannel.new(type, signature, @selector)
-      channel.bind(address)
-      add_channel(channel, klass, *args, &block)
-      signature
+    def error_handler(callback = nil, &block)
+      @error_handler = callback || block
     end
 
-    #def close(signature)
-    #  @channels.remove(signature).close
-    #end
-
-    def connect_tcp(server, port, handler=nil, *args, &block)
-      klass = _klass_from_handler(Connection, handler, *args)
-      _connect_tcp(server, port, nil, klass, *args, &block)
+    def next_tick(callback=nil, &block)
+      @next_tick_queue << (callback || block)
+      signal_loopbreak if running?
     end
 
-    def connect_zmq(server, type, handler=nil, *args)
-      klass = _klass_from_handler(Connection, handler, *args)
-      _connect_zmq(server, type, klass, *args)
+    def run(callback=nil, shutdown_hook=nil, &block)
+      @callback = callback || block
+
+      add_shutdown_hook(shutdown_hook) if shutdown_hook
+
+      begin
+        @running = true
+
+        add_timer(0, @callback) if @callback
+
+        @selector = Selector.open
+        @run_reactor = true
+
+        while @run_reactor
+          run_deferred_callbacks
+          break unless @run_reactor
+          run_timers
+          break unless @run_reactor
+          remove_unbound_channels
+          check_io
+          add_new_channels
+          process_io
+        end
+      ensure
+        @selector.close rescue nil
+        @selector = nil
+        @unbound_channels += @channels
+        remove_unbound_channels
+        @shutdown_hooks.pop.call until @shutdown_hooks.empty?
+        @next_tick_queue = ConcurrentLinkedQueue.new
+        @running = false
+      end
     end
 
-    #def reconnect(server, port, connection, &block)
-    #  return connection if @connections.has_key?(connection.signature)
-    #  _connect_tcp(server, port, connection, &block)
-    #end
+    def reactor_running?
+      @running || false
+    end
+
+    def start_server(server, port_or_type=nil, handler=nil, *args, &block)
+      if server =~ %r{\w+://}
+        _bind_zmq(server, port_or_type, handler, *args, &block)
+      else
+        _bind_tcp(server, port_or_type, handler, *args, &block)
+      end
+    end
+
+    def stop_event_loop
+      @run_reactor = false
+      signal_loopbreak
+    end
+
+    def stop_server(channel)
+      channel.close
+    end
 
     private
 
-    def add_new_channels
-      @new_channels.each do |channel|
-        begin
-          channel.register
-          @channels << channel
-        rescue ClosedChannelException
-          @unbound_channels << channel
-        end
-      end
-      @new_channels.clear
+    def _bind_tcp(address, port, handler, *args, &block)
+      klass = _klass_from_handler(Connection, handler)
+      channel = TCPChannel.new(@selector)
+      channel.bind(address, port)
+      add_channel(channel, Acceptor, klass, *args, &block)
     end
 
-    def remove_unbound_channels
-      @unbound_channels.each do |channel|
-        channel.handler.unbind if channel.handler
-        channel.close
-      end
-      @unbound_channels.clear
+    def _bind_zmq(address, type, handler, *args, &block)
+      klass = _klass_from_handler(Connection, handler)
+      channel = ZMQChannel.new(type, @selector)
+      channel.bind(address)
+      add_channel(channel, klass, *args, &block)
+    end
+
+    def _connect_tcp(address, port, handler=nil, *args, &block)
+      klass = _klass_from_handler(Connection, handler)
+      channel = TCPChannel.new(@selector)
+      channel.connect(address, port)
+      channel.connect_pending = true
+      add_channel(channel, klass, *args, &block)
+    end
+
+    def _connect_zmq(address, type, handler=nil, *args)
+      klass = _klass_from_handler(Connection, handler)
+      channel = ZMQChannel.new(type, @selector)
+      add_channel(channel, klass, *args)
+      channel.connect(address)
+      channel.handler.connection_completed
     end
 
     def check_io
@@ -178,13 +182,8 @@ module ZMachine
       elsif !@timers.empty?
         now = java.util.Date.new.time
         timer_key = @timers.first_key
-        diff = timer_key - now;
-
-        if diff <= 0
-          timeout = -1
-        else
-          timeout = diff
-        end
+        timeout = timer_key - now
+        timeout = -1 if timeout <= 0
       else
         timeout = 0
       end
@@ -224,50 +223,58 @@ module ZMachine
     end
 
     def is_acceptable(channel)
-      server_signature = channel.signature
       client_channel = channel.accept(next_signature)
       acceptor = channel.handler
       add_channel(client_channel, acceptor.klass, *acceptor.args, &acceptor.callback)
-    rescue IOException => e
+    rescue IOException
       channel.close
     end
 
     def is_readable(channel)
-      signature = channel.signature
       data = channel.read_inbound_data(@read_buffer)
-      return unless data
-      handler = channel.handler
-      handler.receive_data(data)
-    rescue IOException => e
+      channel.handler.receive_data(data) if data
+    rescue IOException
       @unbound_channels << channel
     end
 
     def is_writable(channel)
       @unbound_channels << channel unless channel.write_outbound_data
-    rescue IOException => e
-      @unbound_channels << channel
-    end
-
-    def is_connectable(channel)
-      signature = channel.signature
-      channel.finish_connecting
-      handler = channel.handler
-      handler.connection_completed
     rescue IOException
       @unbound_channels << channel
     end
 
-    def close
-      @selector.close rescue nil
-      @selector = nil
-      @unbound_channels += @channels
-      remove_unbound_channels
+    def is_connectable(channel)
+      channel.finish_connecting
+      channel.handler.connection_completed
+    rescue IOException
+      @unbound_channels << channel
     end
 
     def add_channel(channel, klass, *args, &block)
       channel.handler = klass.new(channel, *args)
       @new_channels << channel
       block.call(channel.handler) if block
+      channel
+    end
+
+    def add_new_channels
+      @new_channels.each do |channel|
+        begin
+          channel.register
+          @channels << channel
+        rescue ClosedChannelException
+          @unbound_channels << channel
+        end
+      end
+      @new_channels.clear
+    end
+
+    def remove_unbound_channels
+      @unbound_channels.each do |channel|
+        channel.handler.unbind if channel.handler
+        channel.close
+      end
+      @unbound_channels.clear
     end
 
     def run_deferred_callbacks
@@ -281,20 +288,6 @@ module ZMachine
           ZMachine.next_tick {} if $!
         end
       end
-    end
-
-    def next_tick(callback=nil, &block)
-      @next_tick_queue << (callback || block)
-      signal_loopbreak if running?
-    end
-
-    def running?
-      @running || false
-    end
-
-    def stop
-      @run_reactor = false
-      signal_loopbreak
     end
 
     def run_timers
@@ -316,37 +309,8 @@ module ZMachine
       end
     end
 
-    def _connect_tcp(address, port, connection=nil, klass=nil, *args, &block)
-      signature = next_signature
-      channel = TCPChannel.new(signature, @selector)
-      channel.connect(address, port)
-      channel.connect_pending = true
-      add_channel(channel, klass, *args, &block)
-      signature
-    end
-
-    def _connect_zmq(address, type, klass=nil, *args, &block)
-      signature = next_signature
-      channel = ZMQChannel.new(type, signature, @selector)
-      add_channel(channel, klass, *args, &block)
-      channel.connect(address)
-      channel.handler.connection_completed
-      signature
-    end
-
-    #def close_connection(signature, after_writing)
-    #  channel = @connections[signature].channel
-    #  if channel and channel.schedule_close(after_writing)
-    #    @unbound_channels << channel
-    #  end
-    #end
-
     def signal_loopbreak
       @selector.wakeup if @selector
-    end
-
-    def connection_count
-      @channels.size
     end
 
     def next_signature

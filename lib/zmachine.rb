@@ -22,18 +22,17 @@ module ZMachine
     extend Forwardable
     def_delegator :instance, :add_shutdown_hook
     def_delegator :instance, :add_timer
-    def_delegator :instance, :attach
     def_delegator :instance, :cancel_timer
+    def_delegator :instance, :connect
     def_delegator :instance, :connection_count
     def_delegator :instance, :error_handler
     def_delegator :instance, :next_tick
     def_delegator :instance, :run
-    def_delegator :instance, :runnning?, :reactor_running?
+    def_delegator :instance, :reactor_running?
     def_delegator :instance, :reconnect
-    def_delegator :instance, :bind, :start_server
-    def_delegator :instance, :stop, :stop_event_loop
-    def_delegator :instance, :close, :stop_server
-    def_delegator :instance, :watch
+    def_delegator :instance, :start_server
+    def_delegator :instance, :stop_event_loop
+    def_delegator :instance, :stop_server
   end
 
   def self._not_implemented
@@ -46,20 +45,16 @@ module ZMachine
     PeriodicTimer.new(interval, callback)
   end
 
+  def self.attach(io, handler = nil, *args, &blk)
+    _not_implemented
+  end
+
   def self.bind_connect(bind_addr, bind_port, server, port = nil, handler = nil, *args)
     _not_implemented
   end
 
   def self.Callback(object = nil, method = nil, &blk)
     _not_implemented
-  end
-
-  def self.connect(server, port_or_type=nil, handler=nil, *args, &block)
-    if server =~ %r{\w+://}
-      instance.connect_zmq(server, port_or_type, handler, *args)
-    else
-      instance.connect_tcp(server, port_or_type, handler, *args, &block)
-    end
   end
 
   def self.connect_unix_domain(socketname, *args, &blk)
@@ -151,6 +146,10 @@ module ZMachine
   end
 
   def self.tick_loop(*a, &b)
+    _not_implemented
+  end
+
+  def self.watch(io, handler = nil, *args, &blk)
     _not_implemented
   end
 

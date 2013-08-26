@@ -1,3 +1,4 @@
+java_import org.zeromq.ZMQ
 java_import org.zeromq.ZMsg
 java_import org.zeromq.ZMQException
 
@@ -8,10 +9,10 @@ module ZMachine
 
     attr_reader :port
 
-    def initialize(type, signature, selector)
-      super(signature, selector)
+    def initialize(type, selector)
+      super(selector)
       @socket = ZMachine.context.create_socket(type)
-      @socket.set_router_mandatory(true) rescue nil
+      @socket.set_router_mandatory(true) if type == ZMQ::ROUTER
     end
 
     def register
@@ -23,8 +24,7 @@ module ZMachine
     end
 
     def connect(address)
-      @socket.identity = "client".to_java_bytes
-      @socket.connect(address)
+      @socket.connect(address) if address
     end
 
     def identity=(value)
@@ -47,7 +47,7 @@ module ZMachine
     def send_msg(msg)
       msg.java_send(:send, [org.zeromq.ZMQ::Socket], @socket)
       return true
-    rescue ZMQException => e
+    rescue ZMQException
       return false
     end
 

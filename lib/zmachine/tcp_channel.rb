@@ -7,8 +7,8 @@ module ZMachine
 
     attr_reader :connect_pending
 
-    def initialize(signature, selector)
-      super(signature, selector)
+    def initialize(selector)
+      super(selector)
       @close_scheduled = false
       @connect_pending = false
     end
@@ -24,11 +24,11 @@ module ZMachine
       @socket.bind(address)
     end
 
-    def accept(client_signature)
+    def accept
       client_socket = socket.accept
       return unless client_socket
       client_socket.configure_blocking(false)
-      TCPChannel.new(client_socket, client_signature, @selector)
+      TCPChannel.new(client_socket, @selector)
     end
 
     def connect(address, port)
