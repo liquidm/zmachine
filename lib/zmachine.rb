@@ -5,7 +5,6 @@ require 'zmachine/deferrable'
 require 'zmachine/reactor'
 require 'zmachine/timers'
 
-java_import java.lang.ThreadLocal
 
 module ZMachine
   class ConnectionError < RuntimeError; end
@@ -14,15 +13,11 @@ module ZMachine
   class Unsupported < RuntimeError; end
 
   def self.reactor
-    @reactor ||= ThreadLocal.new
-    @reactor.set(Reactor.new) unless @reactor.get
-    @reactor.get
+    Thread.current[:reactor] ||= Reactor.new
   end
 
   def self.context
-    @context ||= ThreadLocal.new
-    @context.set(ZContext.new) unless @context.get
-    @context.get
+    Thread.current[:context] ||= ZContext.new
   end
 
   class << self
