@@ -2,7 +2,7 @@
 
 Gem::Specification.new do |spec|
   spec.name          = "zmachine"
-  spec.version       = "0.1.0"
+  spec.version       = "0.1.1"
   spec.authors       = ["madvertise Mobile Advertising GmbH"]
   spec.email         = ["tech@madvertise.com"]
   spec.description   = %q{pure JRuby multi-threaded EventMachine compatible event loop}

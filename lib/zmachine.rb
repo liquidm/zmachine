@@ -12,6 +12,11 @@ module ZMachine
   class UnknownTimerFired < RuntimeError; end
   class Unsupported < RuntimeError; end
 
+  class << self
+    attr_accessor :logger
+    attr_accessor :debug
+  end
+
   def self.reactor
     Thread.current[:reactor] ||= Reactor.new
   end

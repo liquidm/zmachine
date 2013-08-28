@@ -54,6 +54,7 @@ module ZMachine
         @timers.put(deadline, [signature])
       end
 
+      ZMachine.logger.debug("zmachine:#{__method__}", signature: signature) if ZMachine.debug
       @timer_callbacks[signature] = callback
       signature
     end
@@ -62,11 +63,13 @@ module ZMachine
       if timer_or_sig.respond_to?(:cancel)
         timer_or_sig.cancel
       else
+        ZMachine.logger.debug("zmachine:#{__method__}", signature: timer_or_sig) if ZMachine.debug
         @timer_callbacks[timer_or_sig] = false if @timer_callbacks.has_key?(timer_or_sig)
       end
     end
 
     def connect(server, port_or_type=nil, handler=nil, *args, &block)
+      ZMachine.logger.debug("zmachine:#{__method__}", server: server, port_or_type: port_or_type) if ZMachine.debug
       if server.nil? or server =~ %r{\w+://}
         _connect_zmq(server, port_or_type, handler, *args, &block)
       else
@@ -88,6 +91,8 @@ module ZMachine
     end
 
     def run(callback=nil, shutdown_hook=nil, &block)
+      ZMachine.logger.debug("zmachine:#{__method__}") if ZMachine.debug
+
       @callback = callback || block
 
       add_shutdown_hook(shutdown_hook) if shutdown_hook
@@ -101,6 +106,7 @@ module ZMachine
         @run_reactor = true
 
         while @run_reactor
+          ZMachine.logger.debug("zmachine:#{__method__}", run_reactor: true) if ZMachine.debug
           run_deferred_callbacks
           break unless @run_reactor
           run_timers
@@ -111,13 +117,17 @@ module ZMachine
           process_io
         end
       ensure
+        ZMachine.logger.debug("zmachine:#{__method__}", stop: :selector) if ZMachine.debug
         @selector.close rescue nil
         @selector = nil
+        ZMachine.logger.debug("zmachine:#{__method__}", stop: :channels) if ZMachine.debug
         @unbound_channels += @channels
         remove_unbound_channels
+        ZMachine.logger.debug("zmachine:#{__method__}", stop: :shutdown_hooks) if ZMachine.debug
         @shutdown_hooks.pop.call until @shutdown_hooks.empty?
         @next_tick_queue = ConcurrentLinkedQueue.new
         @running = false
+        ZMachine.logger.debug("zmachine:#{__method__}", stop: :zcontext) if ZMachine.debug
         ZMachine.context.destroy
       end
     end
@@ -127,6 +137,7 @@ module ZMachine
     end
 
     def start_server(server, port_or_type=nil, handler=nil, *args, &block)
+      ZMachine.logger.debug("zmachine:#{__method__}", server: server, port_or_type: port_or_type) if ZMachine.debug
       if server =~ %r{\w+://}
         _bind_zmq(server, port_or_type, handler, *args, &block)
       else
@@ -192,6 +203,8 @@ module ZMachine
         timeout = -1
       end
 
+      ZMachine.logger.debug("zmachine:#{__method__}", timeout: timeout) if ZMachine.debug
+
       if timeout == -1
         @selector.select_now
       else
@@ -223,6 +236,7 @@ module ZMachine
     end
 
     def is_acceptable(channel)
+      ZMachine.logger.debug("zmachine:#{__method__}", channel: channel) if ZMachine.debug
       client_channel = channel.accept(next_signature)
       acceptor = channel.handler
       add_channel(client_channel, acceptor.klass, *acceptor.args, &acceptor.callback)
@@ -231,6 +245,7 @@ module ZMachine
     end
 
     def is_readable(channel)
+      ZMachine.logger.debug("zmachine:#{__method__}", channel: channel) if ZMachine.debug
       data = channel.read_inbound_data(@read_buffer)
       channel.handler.receive_data(data) if data
     rescue IOException
@@ -238,12 +253,14 @@ module ZMachine
     end
 
     def is_writable(channel)
+      ZMachine.logger.debug("zmachine:#{__method__}", channel: channel) if ZMachine.debug
       @unbound_channels << channel unless channel.write_outbound_data
     rescue IOException
       @unbound_channels << channel
     end
 
     def is_connectable(channel)
+      ZMachine.logger.debug("zmachine:#{__method__}", channel: channel) if ZMachine.debug
       channel.finish_connecting
       channel.handler.connection_completed
     rescue IOException
@@ -251,6 +268,7 @@ module ZMachine
     end
 
     def add_channel(channel, klass, *args, &block)
+      ZMachine.logger.debug("zmachine:#{__method__}", channel: channel) if ZMachine.debug
       channel.handler = klass.new(channel, *args)
       @new_channels << channel
       block.call(channel.handler) if block
