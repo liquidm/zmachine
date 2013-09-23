@@ -19,6 +19,10 @@ require 'zmachine/tcp_channel'
 require 'zmachine/zmq_channel'
 
 module ZMachine
+
+  class NotReactorOwner < Exception
+  end
+
   class Reactor
 
     def initialize
@@ -41,12 +45,13 @@ module ZMachine
     end
 
     def add_timer(*args, &block)
+      check_reactor_thread
       interval = args.shift
       callback = args.shift || block
       return unless callback
 
       signature = next_signature
-      deadline = java.util.Date.new.time + (interval.to_f * 1000).to_i
+      deadline = java.lang.System.nano_time + (interval.to_f * 1000_000_000).to_i
 
       if @timers.contains_key(deadline)
         @timers.get(deadline) << signature
@@ -70,6 +75,7 @@ module ZMachine
 
     def connect(server, port_or_type=nil, handler=nil, *args, &block)
       ZMachine.logger.debug("zmachine:#{__method__}", server: server, port_or_type: port_or_type) if ZMachine.debug
+      check_reactor_thread
       if server.nil? or server =~ %r{\w+://}
         _connect_zmq(server, port_or_type, handler, *args, &block)
       else
@@ -116,6 +122,10 @@ module ZMachine
           add_new_channels
           process_io
         end
+      rescue => e
+        # maybe add error check callback here
+        puts "FATAL reactor died : #{e.message}"
+        puts e.backtrace
       ensure
         ZMachine.logger.debug("zmachine:#{__method__}", stop: :selector) if ZMachine.debug
         @selector.close rescue nil
@@ -156,6 +166,12 @@ module ZMachine
 
     private
 
+    def check_reactor_thread
+      raise NoReactorError if !Thread.current[:reactor]
+      raise NotReactorOwner if Thread.current[:reactor] != self
+    end
+
+
     def _bind_tcp(address, port, handler, *args, &block)
       klass = _klass_from_handler(Connection, handler)
       channel = TCPChannel.new(@selector)
@@ -176,6 +192,7 @@ module ZMachine
       channel.connect(address, port)
       channel.connect_pending = true
       add_channel(channel, klass, *args, &block)
+      channel.handler
     end
 
     def _connect_zmq(address, type, handler=nil, *args, &block)
@@ -184,14 +201,14 @@ module ZMachine
       add_channel(channel, klass, *args, &block)
       channel.connect(address)
       channel.handler.connection_completed
-      channel
+      channel.handler
     end
 
     def check_io
       if @new_channels.size > 0
         timeout = -1
       elsif !@timers.empty?
-        now = java.util.Date.new.time
+        now = java.lang.System.nano_time
         timer_key = @timers.first_key
         timeout = timer_key - now
         timeout = -1 if timeout <= 0
@@ -218,7 +235,6 @@ module ZMachine
       while it.has_next
         selected_key = it.next
         it.remove
-
         if selected_key.connectable?
           is_connectable(selected_key.attachment)
         elsif selected_key.acceptable?
@@ -273,6 +289,9 @@ module ZMachine
       @new_channels << channel
       block.call(channel.handler) if block
       channel
+    rescue => e
+      puts "ERROR adding channel #{e.message}"
+      puts e.backtrace
     end
 
     def add_new_channels
@@ -280,7 +299,9 @@ module ZMachine
         begin
           channel.register
           @channels << channel
-        rescue ClosedChannelException
+        rescue ClosedChannelException => e
+          puts "ERROR adding channel #{e.message}"
+          puts e.backtrace
           @unbound_channels << channel
         end
       end
@@ -309,7 +330,7 @@ module ZMachine
     end
 
     def run_timers
-      now = java.util.Date.new.time
+      now = java.lang.System.nano_time
       until @timers.empty?
         timer_key = @timers.first_key
         break if timer_key > now

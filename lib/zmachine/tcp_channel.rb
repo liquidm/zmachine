@@ -54,7 +54,11 @@ module ZMachine
       end
     end
 
-    def close
+    def close_connection
+      close
+    end
+
+    def close(flush = true)
       if @channel_key
         @channel_key.cancel
         @channel_key = nil
@@ -147,6 +151,11 @@ module ZMachine
 
     def has_more?
       false
+    end
+
+    def can_send?
+      # TODO : add correct implementation here
+      !@close_scheduled && @socket.is_connected
     end
 
     def current_events

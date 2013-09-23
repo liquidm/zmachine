@@ -30,6 +30,13 @@ module ZMachine
     def receive_data(data)
     end
 
+    def send3(a,b,c)
+      @channel.send3 a,b,c
+    end
+    def send2(a,b)
+      @channel.send2 a,b
+    end
+
     def unbind
     end
 
