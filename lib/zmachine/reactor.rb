@@ -23,6 +23,9 @@ module ZMachine
   class NotReactorOwner < Exception
   end
 
+  class NoReactorError < Exception
+  end
+
   class Reactor
 
     @mutex = Mutex.new
