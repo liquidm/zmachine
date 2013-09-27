@@ -40,6 +40,10 @@ module ZMachine
     def unbind
     end
 
+    def reconnect(server, port)
+      ZMachine.reconnect server, port, self
+    end
+
     # public API
 
     def_delegator :@channel, :close_connection

@@ -54,8 +54,8 @@ module ZMachine
       end
     end
 
-    def close_connection
-      close
+    def close_connection(flush = true)
+      close(flush)
     end
 
     def close(flush = true)

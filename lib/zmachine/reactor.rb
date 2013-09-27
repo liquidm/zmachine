@@ -25,6 +25,29 @@ module ZMachine
 
   class Reactor
 
+    @mutex = Mutex.new
+
+    def self.register_reactor(reactor)
+      @mutex.synchronize do
+        @reactors ||= []
+        @reactors << reactor
+      end
+    end
+
+    def self.terminate_all_reactors
+      # should have a lock ....
+      @mutex.synchronize do
+        @reactors.each(&:stop_event_loop)
+        @reactors.clear
+      end
+    end
+
+    def self.unregister_reactor(reactor)
+      @mutex.synchronize do
+        @reactors.delete(reactor)
+      end
+    end
+
     def initialize
       @timers = TreeMap.new
       @timer_callbacks = {}
@@ -83,6 +106,13 @@ module ZMachine
       end
     end
 
+    def reconnect(server, port, handler)
+      # No reconnect for zmq ... handled by zmq itself anyway
+      return if handler && handler.channel.is_a?(ZMQChannel) #
+      # TODO : we might want to check if this connection is really dead?
+      connect server, port, handler
+    end
+
     def connection_count
       @channels.size
     end
@@ -93,7 +123,7 @@ module ZMachine
 
     def next_tick(callback=nil, &block)
       @next_tick_queue << (callback || block)
-      signal_loopbreak if running?
+      signal_loopbreak if reactor_running?
     end
 
     def run(callback=nil, shutdown_hook=nil, &block)
@@ -104,9 +134,16 @@ module ZMachine
       add_shutdown_hook(shutdown_hook) if shutdown_hook
 
       begin
+        # list of active reactors
+        Reactor.register_reactor(self)
+
         @running = true
 
-        add_timer(0, @callback) if @callback
+        if @callback
+          add_timer(0) do
+            @callback.call(self)
+          end
+        end
 
         @selector = Selector.open
         @run_reactor = true
@@ -137,6 +174,7 @@ module ZMachine
         @shutdown_hooks.pop.call until @shutdown_hooks.empty?
         @next_tick_queue = ConcurrentLinkedQueue.new
         @running = false
+        Reactor.unregister_reactor(self)
         ZMachine.logger.debug("zmachine:#{__method__}", stop: :zcontext) if ZMachine.debug
         ZMachine.context.destroy
       end
@@ -210,7 +248,7 @@ module ZMachine
       elsif !@timers.empty?
         now = java.lang.System.nano_time
         timer_key = @timers.first_key
-        timeout = timer_key - now
+        timeout = (timer_key - now) / 1_000_000 # needed in ms ... we are in nanos
         timeout = -1 if timeout <= 0
       else
         timeout = 0
@@ -277,15 +315,23 @@ module ZMachine
 
     def is_connectable(channel)
       ZMachine.logger.debug("zmachine:#{__method__}", channel: channel) if ZMachine.debug
-      channel.finish_connecting
+      result = channel.finish_connecting
+      # we need to handle this properly, not just log it
+      ZMachine.logger.warn("zmachine:finish_connecting failed", channel: channel) if !result
       channel.handler.connection_completed
     rescue IOException
       @unbound_channels << channel
     end
 
-    def add_channel(channel, klass, *args, &block)
+    def add_channel(channel, klass_or_instance, *args, &block)
       ZMachine.logger.debug("zmachine:#{__method__}", channel: channel) if ZMachine.debug
-      channel.handler = klass.new(channel, *args)
+      if klass_or_instance.is_a?(Connection)
+        # if klass_or_instance is not a class but already an instance
+        channel.handler = klass_or_instance
+        klass_or_instance.channel = channel
+      else
+        channel.handler = klass_or_instance.new(channel, *args)
+      end
       @new_channels << channel
       block.call(channel.handler) if block
       channel
@@ -329,15 +375,14 @@ module ZMachine
       end
     end
 
+    # TODO : we should definitly optimize periodic timers ... right now they are wasting a hell of cycle es they are recreated on every invocation
     def run_timers
       now = java.lang.System.nano_time
       until @timers.empty?
         timer_key = @timers.first_key
         break if timer_key > now
-
         signatures = @timers.get(timer_key)
         @timers.remove(timer_key)
-
         # Fire all timers at this timestamp
         signatures.each do |signature|
           callback = @timer_callbacks.delete(signature)
@@ -359,8 +404,13 @@ module ZMachine
     def _klass_from_handler(klass = Connection, handler = nil)
       if handler and handler.is_a?(Class)
         handler
+      elsif handler and handler.is_a?(Connection)
+        # can happen on reconnect
+        handler
       elsif handler
-        _handler_from_klass(klass, handler)
+        # MK : this method does not exist?!
+        # _handler_from_klass(klass, handler)
+        raise "please check, not implemented"
       else
         klass
       end
