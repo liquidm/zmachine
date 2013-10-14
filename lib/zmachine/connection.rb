@@ -191,7 +191,7 @@ module ZMachine
     private
 
     def _not_implemented
-      raise RuntimeError.new("API call not implemented!")
+      raise RuntimeError.new("API call not implemented! #{caller[0]}")
     end
   end
 end

@@ -11,6 +11,7 @@ module ZMachine
       super(selector)
       @close_scheduled = false
       @connect_pending = false
+      @server_socket   = false
     end
 
     def register
@@ -18,6 +19,7 @@ module ZMachine
     end
 
     def bind(address, port)
+      @server_socket = true
       address = InetSocketAddress.new(address, port)
       @socket = ServerSocketChannel.open
       @socket.configure_blocking(false)
@@ -28,7 +30,9 @@ module ZMachine
       client_socket = socket.accept
       return unless client_socket
       client_socket.configure_blocking(false)
-      TCPChannel.new(client_socket, @selector)
+      channel = TCPChannel.new(@selector)
+      channel.socket = client_socket
+      channel
     end
 
     def connect(address, port)
@@ -55,10 +59,10 @@ module ZMachine
     end
 
     def close_connection(flush = true)
-      close(flush)
+      @reactor.unbind_channel(self) if schedule_close(flush)
     end
 
-    def close(flush = true)
+    def close
       if @channel_key
         @channel_key.cancel
         @channel_key = nil
@@ -88,7 +92,6 @@ module ZMachine
       until @outbound_queue.empty?
         buffer = @outbound_queue.first
         @socket.write(buffer) if buffer.remaining > 0
-
         # Did we consume the whole outbound buffer? If yes,
         # pop it off and keep looping. If no, the outbound network
         # buffers are full, so break out of here.
@@ -149,13 +152,13 @@ module ZMachine
       end
     end
 
+    # these two are a bit misleading .. only used for the zmq channel
     def has_more?
       false
     end
 
     def can_send?
-      # TODO : add correct implementation here
-      !@close_scheduled && @socket.is_connected
+      false
     end
 
     def current_events

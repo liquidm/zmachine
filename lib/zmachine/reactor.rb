@@ -90,6 +90,11 @@ module ZMachine
       signature
     end
 
+    def unbind_channel(channel)
+      channel.handler = nil
+      @unbound_channels << channel
+    end
+
     def cancel_timer(timer_or_sig)
       if timer_or_sig.respond_to?(:cancel)
         timer_or_sig.cancel
@@ -107,6 +112,8 @@ module ZMachine
       else
         _connect_tcp(server, port_or_type, handler, *args, &block)
       end
+    rescue java.nio.channels.UnresolvedAddressException
+      raise ZMachine::ConnectionError.new('unable to resolve server address')
     end
 
     def reconnect(server, port, handler)
@@ -180,6 +187,7 @@ module ZMachine
         Reactor.unregister_reactor(self)
         ZMachine.logger.debug("zmachine:#{__method__}", stop: :zcontext) if ZMachine.debug
         ZMachine.context.destroy
+        ZMachine.clear_current_reactor
       end
     end
 
@@ -217,7 +225,8 @@ module ZMachine
       klass = _klass_from_handler(Connection, handler)
       channel = TCPChannel.new(@selector)
       channel.bind(address, port)
-      add_channel(channel, Acceptor, klass, *args, &block)
+      add_channel(channel, Acceptor, klass, *(args+[block]) )
+      channel.handler
     end
 
     def _bind_zmq(address, type, handler, *args, &block)
@@ -225,6 +234,7 @@ module ZMachine
       channel = ZMQChannel.new(type, @selector)
       channel.bind(address)
       add_channel(channel, klass, *args, &block)
+      channel.handler
     end
 
     def _connect_tcp(address, port, handler=nil, *args, &block)
@@ -294,10 +304,10 @@ module ZMachine
 
     def is_acceptable(channel)
       ZMachine.logger.debug("zmachine:#{__method__}", channel: channel) if ZMachine.debug
-      client_channel = channel.accept(next_signature)
+      client_channel = channel.accept
       acceptor = channel.handler
       add_channel(client_channel, acceptor.klass, *acceptor.args, &acceptor.callback)
-    rescue IOException
+    rescue IOException => e
       channel.close
     end
 
@@ -305,14 +315,14 @@ module ZMachine
       ZMachine.logger.debug("zmachine:#{__method__}", channel: channel) if ZMachine.debug
       data = channel.read_inbound_data(@read_buffer)
       channel.handler.receive_data(data) if data
-    rescue IOException
+    rescue IOException => e
       @unbound_channels << channel
     end
 
     def is_writable(channel)
       ZMachine.logger.debug("zmachine:#{__method__}", channel: channel) if ZMachine.debug
       @unbound_channels << channel unless channel.write_outbound_data
-    rescue IOException
+    rescue IOException => e
       @unbound_channels << channel
     end
 
@@ -322,7 +332,7 @@ module ZMachine
       # we need to handle this properly, not just log it
       ZMachine.logger.warn("zmachine:finish_connecting failed", channel: channel) if !result
       channel.handler.connection_completed
-    rescue IOException
+    rescue IOException => e
       @unbound_channels << channel
     end
 
@@ -335,6 +345,7 @@ module ZMachine
       else
         channel.handler = klass_or_instance.new(channel, *args)
       end
+      channel.reactor = self
       @new_channels << channel
       block.call(channel.handler) if block
       channel
@@ -349,8 +360,6 @@ module ZMachine
           channel.register
           @channels << channel
         rescue ClosedChannelException => e
-          puts "ERROR adding channel #{e.message}"
-          puts e.backtrace
           @unbound_channels << channel
         end
       end
@@ -358,9 +367,14 @@ module ZMachine
     end
 
     def remove_unbound_channels
+      return if @unbound_channels.empty?
       @unbound_channels.each do |channel|
-        channel.handler.unbind if channel.handler
-        channel.close
+        begin
+          channel.handler.unbind if channel.handler
+          channel.close
+        rescue Exception => e
+          puts "remove unbound error #{e.class} #{e.message}"
+        end
       end
       @unbound_channels.clear
     end
@@ -372,8 +386,8 @@ module ZMachine
         begin
           size -= 1
           callback.call
-        ensure
-          ZMachine.next_tick {} if $!
+        # ensure
+        #   ZMachine.next_tick {} if $!
         end
       end
     end
@@ -411,9 +425,7 @@ module ZMachine
         # can happen on reconnect
         handler
       elsif handler
-        # MK : this method does not exist?!
-        # _handler_from_klass(klass, handler)
-        raise "please check, not implemented"
+        _handler_from_module(klass, handler)
       else
         klass
       end

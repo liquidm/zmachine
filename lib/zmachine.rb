@@ -17,6 +17,10 @@ module ZMachine
     attr_accessor :debug
   end
 
+  def self.clear_current_reactor
+    Thread.current[:reactor] = nil
+  end
+
   def self.reactor
     Thread.current[:reactor] ||= Reactor.new
   end
@@ -43,7 +47,7 @@ module ZMachine
   end
 
   def self._not_implemented
-    raise RuntimeError.new("API call not implemented!")
+    raise RuntimeError.new("API call not implemented! #{caller[0]}")
   end
 
   def self.add_periodic_timer(*args, &block)
@@ -110,6 +114,10 @@ module ZMachine
 
   def self.reactor_thread?
     _not_implemented
+  end
+
+  def self.stop
+    Reactor.terminate_all_reactors
   end
 
   def self.run_block(&block)
