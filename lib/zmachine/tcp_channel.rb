@@ -162,7 +162,7 @@ module ZMachine
     end
 
     def current_events
-      if @socket.respond_to?(:accept)
+      if @socket.is_a?(ServerSocketChannel)
         return SelectionKey::OP_ACCEPT
       end
 

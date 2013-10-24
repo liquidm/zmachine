@@ -53,9 +53,11 @@ module ZMachine
     end
 
     def comm_inactivity_timeout
+      channel.comm_inactivity_timeout
     end
 
     def comm_inactivity_timeout=(value)
+      channel.comm_inactivity_timeout = value
     end
 
     alias :set_comm_inactivity_timeout :comm_inactivity_timeout=
