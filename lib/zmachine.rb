@@ -1,10 +1,12 @@
-require 'forwardable'
+require 'zmachine/jeromq-0.3.0-SNAPSHOT.jar'
+java_import org.zeromq.ZContext
+
+require 'madvertise/boot'
 
 require 'zmachine/connection'
 require 'zmachine/deferrable'
 require 'zmachine/reactor'
 require 'zmachine/timers'
-
 
 module ZMachine
   class ConnectionError < RuntimeError; end
@@ -25,25 +27,9 @@ module ZMachine
     Thread.current[:reactor] ||= Reactor.new
   end
 
+  # TODO: move to ZMQChannel
   def self.context
     Thread.current[:context] ||= ZContext.new
-  end
-
-  class << self
-    extend Forwardable
-    def_delegator :reactor, :add_shutdown_hook
-    def_delegator :reactor, :add_timer
-    def_delegator :reactor, :cancel_timer
-    def_delegator :reactor, :connect
-    def_delegator :reactor, :connection_count
-    def_delegator :reactor, :error_handler
-    def_delegator :reactor, :next_tick
-    def_delegator :reactor, :run
-    def_delegator :reactor, :reactor_running?
-    def_delegator :reactor, :reconnect
-    def_delegator :reactor, :start_server
-    def_delegator :reactor, :stop_event_loop
-    def_delegator :reactor, :stop_server
   end
 
   def self._not_implemented
@@ -54,6 +40,14 @@ module ZMachine
     interval = args.shift
     callback = args.shift || block
     PeriodicTimer.new(interval, callback)
+  end
+
+  def self.add_shutdown_hook(&block)
+    reactor.add_shutdown_hook(&block)
+  end
+
+  def self.add_timer(*args, &block)
+    reactor.add_timer(*args, &block)
   end
 
   def self.attach(io, handler = nil, *args, &blk)
@@ -68,8 +62,24 @@ module ZMachine
     _not_implemented
   end
 
+  def self.cancel_timer(timer_or_sig)
+    timer_or_sig.cancel # we do not support signatures
+  end
+
+  def self.close_connection(connection)
+    reactor.close_connection(connection)
+  end
+
+  def self.connect(server, port_or_type=nil, handler=nil, *args, &block)
+    reactor.connect(server, port_or_type, handler, *args, &block)
+  end
+
   def self.connect_unix_domain(socketname, *args, &blk)
     _not_implemented
+  end
+
+  def self.connection_count
+    reactor.connections.size
   end
 
   def self.defer(op = nil, callback = nil, &blk)
@@ -88,6 +98,10 @@ module ZMachine
     _not_implemented
   end
 
+  def self.error_handler(callback = nil, &block)
+    _not_implemented
+  end
+
   def self.fork_reactor(&block)
     _not_implemented
   end
@@ -97,11 +111,15 @@ module ZMachine
   end
 
   def self.heartbeat_interval
-    _not_implemented
+    reactor.heartbeat_interval
   end
 
   def self.heartbeat_interval=(time)
-    _not_implemented
+    reactor.heartbeat_interval = time
+  end
+
+  def self.next_tick(callback=nil, &block)
+    reactor.next_tick(callback, &block)
   end
 
   def self.open_datagram_socket(address, port, handler = nil, *args)
@@ -112,12 +130,20 @@ module ZMachine
     _not_implemented
   end
 
+  def self.reactor_running?
+    reactor.running?
+  end
+
   def self.reactor_thread?
     _not_implemented
   end
 
-  def self.stop
-    Reactor.terminate_all_reactors
+  def self.reconnect(server, port, handler)
+    reactor.reconnect(server, port, handler)
+  end
+
+  def self.run(callback=nil, shutdown_hook=nil, &block)
+    reactor.run(callback, shutdown_hook, &block)
   end
 
   def self.run_block(&block)
@@ -152,8 +178,24 @@ module ZMachine
     _not_implemented
   end
 
+  def self.start_server(server, port_or_type=nil, handler=nil, *args, &block)
+    reactor.bind(server, port_or_type, handler, *args, &block)
+  end
+
   def self.start_unix_domain_server(filename, *args, &block)
     _not_implemented
+  end
+
+  def self.stop_event_loop
+    reactor.stop_event_loop
+  end
+
+  def self.stop_server(signature)
+    reactor.stop_server(signature)
+  end
+
+  def self.stop
+    Reactor.terminate_all_reactors
   end
 
   def self.system(cmd, *args, &cb)
@@ -176,4 +218,10 @@ module ZMachine
     _not_implemented
   end
 
+end
+
+if ENV['DEBUG']
+  $log.level = :debug
+  ZMachine.logger = $log
+  ZMachine.debug = true
 end

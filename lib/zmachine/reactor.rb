@@ -1,32 +1,14 @@
 java_import java.lang.System
-java_import java.io.FileDescriptor
-java_import java.io.IOException
-java_import java.net.InetSocketAddress
-java_import java.nio.ByteBuffer
-java_import java.nio.channels.ClosedChannelException
-java_import java.nio.channels.SelectionKey
 java_import java.nio.channels.Selector
-java_import java.nio.channels.ServerSocketChannel
-java_import java.nio.channels.SocketChannel
-java_import java.util.TreeMap
-java_import java.util.concurrent.atomic.AtomicBoolean
 java_import java.util.concurrent.ConcurrentLinkedQueue
 
-require 'zmachine/jeromq-0.3.0-SNAPSHOT.jar'
-java_import org.zeromq.ZContext
-
-require 'zmachine/acceptor'
-require 'zmachine/tcp_channel'
-require 'zmachine/zmq_channel'
 require 'zmachine/hashed_wheel'
+require 'zmachine/connection_manager'
 
 module ZMachine
 
-  class NotReactorOwner < Exception
-  end
-
-  class NoReactorError < Exception
-  end
+  class NotReactorOwner < Exception; end
+  class NoReactorError < Exception; end
 
   class Reactor
 
@@ -40,7 +22,6 @@ module ZMachine
     end
 
     def self.terminate_all_reactors
-      # should have a lock ....
       @mutex.synchronize do
         @reactors.each(&:stop_event_loop)
         @reactors.clear
@@ -54,186 +35,121 @@ module ZMachine
     end
 
     def initialize
-      #  a 10 ms tick wheel with a 512 slots => ~5s for a round
-      @wheel = HashedWheel.new(512, 10)
-      @last = now = System.nano_time
-      @heartbeat_interval = 50_000_000 # 50 ms
-      @timers = TreeMap.new
-      @timer_callbacks = {}
-      @channels = []
-      @new_channels = []
-      @unbound_channels = []
-      @next_signature = 0
-      @shutdown_hooks = []
+      # a 10 ms tick wheel with 512 slots => ~5s for a round
+      @heartbeat_interval = 0.5 # coarse grained by default
       @next_tick_queue = ConcurrentLinkedQueue.new
       @running = false
-
-      # don't use a direct buffer. Ruby doesn't seem to like them.
-      @read_buffer = ByteBuffer.allocate(32*1024)
+      @shutdown_hooks = []
+      @wheel = HashedWheel.new(512, 10)
     end
 
     def add_shutdown_hook(&block)
       @shutdown_hooks << block
     end
 
-    def xadd_timer(*args, &block)
-      check_reactor_thread
-      interval = args.shift
-      callback = args.shift || block
-      return unless callback
-      @wheel.add((interval.to_f * 1000).to_i, &callback)
-    end
-
-
     def add_timer(*args, &block)
       check_reactor_thread
       interval = args.shift
       callback = args.shift || block
+      ZMachine.logger.debug("zmachine:reactor:#{__method__}", interval: interval, callback: callback) if ZMachine.debug
       return unless callback
-
-      signature = next_signature
-      deadline = System.nano_time + (interval.to_f * 1000_000_000).to_i
-
-      if @timers.contains_key(deadline)
-        @timers.get(deadline) << signature
-      else
-        @timers.put(deadline, [signature])
-      end
-
-      ZMachine.logger.debug("zmachine:#{__method__}", signature: signature) if ZMachine.debug
-      @timer_callbacks[signature] = callback
-      signature
+      @wheel.add((interval.to_f * 1000).to_i, &callback)
     end
 
-    def unbind_channel(channel)
-      channel.handler = nil
-      ZMachine.logger.debug "zmachine:unbind_channel", channel:channel if ZMachine.debug
-      @unbound_channels << channel
+    def bind(server, port_or_type=nil, handler=nil, *args, &block)
+      ZMachine.logger.debug("zmachine:reactor:#{__method__}", server: server, port_or_type: port_or_type) if ZMachine.debug
+      check_reactor_thread
+      @connection_manager.bind(server, port_or_type, handler, *args, &block)
     end
 
-    def cancel_timer(timer_or_sig)
-      if timer_or_sig.respond_to?(:cancel)
-        timer_or_sig.cancel
-      else
-        ZMachine.logger.debug("zmachine:#{__method__}", signature: timer_or_sig) if ZMachine.debug
-        @timer_callbacks[timer_or_sig] = false if @timer_callbacks.has_key?(timer_or_sig)
-      end
+    def close_connection(connection)
+      @connection_manager.close_connection(connection)
     end
 
     def connect(server, port_or_type=nil, handler=nil, *args, &block)
-      ZMachine.logger.debug("zmachine:#{__method__}", server: server, port_or_type: port_or_type) if ZMachine.debug
+      ZMachine.logger.debug("zmachine:reactor:#{__method__}", server: server, port_or_type: port_or_type) if ZMachine.debug
       check_reactor_thread
-      if server.nil? or server =~ %r{\w+://}
-        _connect_zmq(server, port_or_type, handler, *args, &block)
-      else
-        _connect_tcp(server, port_or_type, handler, *args, &block)
-      end
-    rescue java.nio.channels.UnresolvedAddressException
-      raise ZMachine::ConnectionError.new('unable to resolve server address')
+      @connection_manager.connect(server, port_or_type, handler, *args, &block)
     end
 
-    def reconnect(server, port, handler)
-      # No reconnect for zmq ... handled by zmq itself anyway
-      return if handler && handler.channel.is_a?(ZMQChannel) #
-      # TODO : we might want to check if this connection is really dead?
-      connect server, port, handler
+    def connections
+      @connection_manager.connections
     end
 
-    def connection_count
-      @channels.size
+    def heartbeat_interval
+      @heartbeat_interval
     end
 
-    def error_handler(callback = nil, &block)
-      @error_handler = callback || block
+    def heartbeat_interval=(value)
+      value = 0.01 if value < 0.01
+      @heartbeat_interval = value
     end
 
     def next_tick(callback=nil, &block)
       @next_tick_queue << (callback || block)
-      signal_loopbreak if reactor_running?
+      wakeup if running?
+    end
+
+    def reconnect(server, port_or_type, handler)
+      return if handler && handler.channel.is_a?(ZMQChannel)
+      ZMachine.logger.debug("zmachine:reactor:#{__method__}", server: server, port_or_type: port_or_type) if ZMachine.debug
+      @connection_manager.connect(server, port_or_type, handler)
     end
 
     def run(callback=nil, shutdown_hook=nil, &block)
-      ZMachine.logger.debug("zmachine:#{__method__}") if ZMachine.debug
-
-      @callback = callback || block
-
+      ZMachine.logger.debug("zmachine:reactor:#{__method__}") if ZMachine.debug
       add_shutdown_hook(shutdown_hook) if shutdown_hook
-
       begin
-        # list of active reactors
         Reactor.register_reactor(self)
-
         @running = true
-
-        if @callback
-          add_timer(0) do
-            @callback.call(self)
-          end
+        if callback = (callback || block)
+          add_timer(0) { callback.call(self) }
         end
-
         @selector = Selector.open
+        @connection_manager = ConnectionManager.new(@selector)
         @run_reactor = true
-
-        while @run_reactor
-          ZMachine.logger.debug("zmachine:#{__method__}", run_reactor: true) if ZMachine.debug
-          run_deferred_callbacks
-          break unless @run_reactor
-          run_timers
-          break unless @run_reactor
-          # advance_timer_wheel
-          # break unless @run_reactor
-          remove_timed_out_channels
-          remove_unbound_channels
-          check_io
-          add_new_channels
-          process_io
-        end
-      rescue => e
-        puts e.message
-        raise e
-      #  # maybe add error check callback here
-      #  puts "FATAL reactor died : #{e.message}"
-      #  puts e.backtrace
+        run_reactor while @run_reactor
       ensure
-        ZMachine.logger.debug("zmachine:#{__method__}", stop: :selector) if ZMachine.debug
+        ZMachine.logger.debug("zmachine:reactor:#{__method__}", stop: :selector) if ZMachine.debug
         @selector.close rescue nil
         @selector = nil
-        ZMachine.logger.debug("zmachine:#{__method__}", stop: :channels) if ZMachine.debug
-        @unbound_channels += @channels
-        remove_unbound_channels
-        ZMachine.logger.debug("zmachine:#{__method__}", stop: :shutdown_hooks) if ZMachine.debug
+        ZMachine.logger.debug("zmachine:reactor:#{__method__}", stop: :connections) if ZMachine.debug
+        @connection_manager.shutdown
+        ZMachine.logger.debug("zmachine:reactor:#{__method__}", stop: :shutdown_hooks) if ZMachine.debug
         @shutdown_hooks.pop.call until @shutdown_hooks.empty?
         @next_tick_queue = ConcurrentLinkedQueue.new
         @running = false
         Reactor.unregister_reactor(self)
-        ZMachine.logger.debug("zmachine:#{__method__}", stop: :zcontext) if ZMachine.debug
+        ZMachine.logger.debug("zmachine:reactor:#{__method__}", stop: :zcontext) if ZMachine.debug
         ZMachine.context.destroy
         ZMachine.clear_current_reactor
       end
     end
 
-    def advance_timer_wheel
-      @wheel.advance.each do |timeout|
-        timeout.callback.call
-      end
-    end
-
-    def reactor_running?
-      @running || false
-    end
-
-    def start_server(server, port_or_type=nil, handler=nil, *args, &block)
-      ZMachine.logger.debug("zmachine:#{__method__}", server: server, port_or_type: port_or_type) if ZMachine.debug
-      if server =~ %r{\w+://}
-        _bind_zmq(server, port_or_type, handler, *args, &block)
+    def run_reactor
+      ZMachine.logger.debug("zmachine:reactor:#{__method__}") if ZMachine.debug
+      run_deferred_callbacks
+      break unless @run_reactor
+      run_timers
+      break unless @run_reactor
+      @connection_manager.cleanup
+      if @connection_manager.idle?
+        ZMachine.logger.debug("zmachine:reactor:#{__method__}", select: @heartbeat_interval) if ZMachine.debug
+        @selector.select(@heartbeat_interval * 1000)
       else
-        _bind_tcp(server, port_or_type, handler, *args, &block)
+        ZMachine.logger.debug("zmachine:reactor:#{__method__}", select: :now) if ZMachine.debug
+        @selector.select_now
       end
+      @connection_manager.process
+    end
+
+    def running?
+      @running
     end
 
     def stop_event_loop
       @run_reactor = false
-      signal_loopbreak
+      wakeup
     end
 
     def stop_server(channel)
@@ -247,267 +163,24 @@ module ZMachine
       raise NotReactorOwner if Thread.current[:reactor] != self
     end
 
-
-    def _bind_tcp(address, port, handler, *args, &block)
-      klass = _klass_from_handler(Connection, handler)
-      channel = TCPChannel.new(@selector)
-      channel.bind(address, port)
-      add_channel(channel, Acceptor, klass, *(args+[block]) )
-      channel.handler
-    end
-
-    def _bind_zmq(address, type, handler, *args, &block)
-      klass = _klass_from_handler(Connection, handler)
-      channel = ZMQChannel.new(type, @selector)
-      channel.bind(address)
-      add_channel(channel, klass, *args, &block)
-      channel.handler
-    end
-
-    def _connect_tcp(address, port, handler=nil, *args, &block)
-      klass = _klass_from_handler(Connection, handler)
-      channel = TCPChannel.new(@selector)
-      channel.connect(address, port)
-      channel.connect_pending = true
-      add_channel(channel, klass, *args, &block)
-      channel.mark_active!
-      channel.handler
-    end
-
-    def _connect_zmq(address, type, handler=nil, *args, &block)
-      klass = _klass_from_handler(Connection, handler)
-      channel = ZMQChannel.new(type, @selector)
-      add_channel(channel, klass, *args, &block)
-      channel.connect(address)
-      channel.handler.connection_completed
-      channel.handler
-    end
-
-    def check_io
-
-      now = System.nano_time
-
-      if @new_channels.size > 0
-        timeout = -1
-      elsif !@timers.empty?
-        timer_key = @timers.first_key
-        timeout = (timer_key - now)
-        timeout = -1 if timeout <= 0
-      else
-       # puts "hb = #{@heartbeat_interval}"
-        #timeout = (@heartbeat_interval - (now - @last)) / 1_000_000
-        timeout = 0
-      end
-
-      # timeout = @heartbeat_interval - (now - @last)
-      # wnd = @wheel.next_deadline - now
-      # timeout = wnd if timeout > wnd
-      # timeout = -1 if timeout == 0
-      # @last = now
-
-      # sucks a bit ...
-      timeout = -1 if @channels.any?(&:has_more?) # iterate all channels????
-
-      # we have to convert the timeout from ns to ms
-      if timeout > 0
-        timeout /= 1_000_000
-        timeout = -1 if timeout == 0 # check if it would be below 1ms .. 0 would be an indefinite wait but we want to select NOW
-      end
-
-      ZMachine.logger.debug("zmachine:#{__method__}", timeout: timeout) if ZMachine.debug
-
-      if timeout < 0
-        @selector.select_now
-      else
-        @selector.select(timeout)
-      end
-    end
-
-    def process_io
-      it = @selector.selected_keys.iterator
-
-      while it.has_next
-        selected_key = it.next
-        it.remove
-        if selected_key.connectable?
-          is_connectable(selected_key.attachment)
-        elsif selected_key.acceptable?
-          is_acceptable(selected_key.attachment)
-        else
-          is_writable(selected_key.attachment) if selected_key.writable?
-          is_readable(selected_key.attachment) if selected_key.readable?
-        end
-      end
-
-      @channels.each do |channel|
-        is_readable(channel) if channel.has_more?
-        is_writable(channel) if channel.can_send?
-      end
-    end
-
-    def is_acceptable(channel)
-      ZMachine.logger.debug("zmachine:#{__method__}", channel: channel) if ZMachine.debug
-      client_channel = channel.accept
-      acceptor = channel.handler
-      new_channel = add_channel(client_channel, acceptor.klass, *acceptor.args, &acceptor.callback)
-      new_channel.mark_active!
-      new_channel
-    rescue IOException => e
-      ZMachine.logger.debug("zmachine:#{__method__} unbind", channel: channel, e:e.message) if ZMachine.debug
-      channel.close
-    end
-
-    def is_readable(channel)
-      ZMachine.logger.debug("zmachine:#{__method__}", channel: channel) if ZMachine.debug
-      channel.mark_active!
-      data = channel.read_inbound_data(@read_buffer)
-      channel.handler.receive_data(data) if data
-    rescue IOException => e
-      ZMachine.logger.debug("zmachine:#{__method__} unbind", channel: channel, e:e.message) if ZMachine.debug
-      @unbound_channels << channel
-    end
-
-    def is_writable(channel)
-      ZMachine.logger.debug("zmachine:#{__method__}", channel: channel) if ZMachine.debug
-      channel.mark_active!
-      @unbound_channels << channel unless channel.write_outbound_data
-    rescue IOException => e
-      ZMachine.logger.debug("zmachine:#{__method__} unbind", channel: channel, e:e.message) if ZMachine.debug
-      @unbound_channels << channel
-    end
-
-    def is_connectable(channel)
-      channel.mark_active!
-      ZMachine.logger.debug("zmachine:#{__method__}", channel: channel) if ZMachine.debug
-      result = channel.finish_connecting
-      if !result
-        ZMachine.logger.warn("zmachine:finish_connecting failed", channel: channel) if !result
-        @unbound_channels << channel
-      else
-        channel.handler.connection_completed
-      end
-    rescue IOException => e
-      ZMachine.logger.debug("zmachine:#{__method__} unbind", channel: channel, e:e.message) if ZMachine.debug
-      @unbound_channels << channel
-    end
-
-    def add_channel(channel, klass_or_instance, *args, &block)
-      ZMachine.logger.debug("zmachine:#{__method__}", channel: channel) if ZMachine.debug
-      if klass_or_instance.is_a?(Connection)
-        # if klass_or_instance is not a class but already an instance
-        channel.handler = klass_or_instance
-        klass_or_instance.channel = channel
-      else
-        channel.handler = klass_or_instance.new(channel, *args)
-      end
-      channel.reactor = self
-      @new_channels << channel
-      block.call(channel.handler) if block
-      channel
-    rescue => e
-      puts "ERROR adding channel #{e.message}"
-      puts e.backtrace
-    end
-
-    def add_new_channels
-      @new_channels.each do |channel|
-        begin
-          channel.register
-          @channels << channel
-        rescue ClosedChannelException => e
-          puts "UNBIND on add_channel #{e.message}"
-          @unbound_channels << channel
-        end
-      end
-      @new_channels.clear
-    end
-
-    def remove_timed_out_channels
-      # TODO : we want to replace all of our timer handling with hashed wheels in the future
-      now = now = System.nano_time
-      @channels.each do |channel|
-        next if channel.comm_inactivity_timeout == 0
-        if !channel.was_active?(now)
-          ZMachine.logger.debug("zmachine:#{__method__} unbind", channel: channel, now:now,last:channel.last_comm_activity, delta:(now - channel.last_comm_activity), timeout:timeout=channel.comm_inactivity_timeout) if ZMachine.debug
-          channel.timedout!
-          @unbound_channels << channel
-        end
-      end
-    end
-
-    def remove_unbound_channels
-      return if @unbound_channels.empty?
-      @unbound_channels.each do |channel|
-        reason = nil
-        channel, reason = *channel if channel.is_a?(Array)
-        begin
-          # puts "#{channel} unbound"
-          @channels.delete(channel)
-          channel.handler.unbind if channel.handler
-          channel.close
-        rescue Exception => e
-          ZMachine.logger.debug("zmachine:#{__method__} unbind error", channel: channel, reason:reason, klass:e.class, msg:e.message) if ZMachine.debug
-        end
-      end
-      @unbound_channels.clear
-    end
-
     def run_deferred_callbacks
-      # max is current size
-      size = @next_tick_queue.size
-      while size > 0 && callback = @next_tick_queue.poll
-        begin
-          size -= 1
-          callback.call
-        # ensure
-        #   ZMachine.next_tick {} if $!
-        end
+      ZMachine.logger.debug("zmachine:reactor:#{__method__}") if ZMachine.debug
+      while callback = @next_tick_queue.poll
+        callback.call
       end
     end
 
-    # TODO : we should definitly optimize periodic timers ... right now they are wasting a hell of cycle es they are recreated on every invocation
     def run_timers
-      now = System.nano_time
-      until @timers.empty?
-        timer_key = @timers.first_key
-        break if timer_key > now
-        signatures = @timers.get(timer_key)
-        @timers.remove(timer_key)
-        # Fire all timers at this timestamp
-        signatures.each do |signature|
-          callback = @timer_callbacks.delete(signature)
-          return if callback == false # callback cancelled
-          callback or raise UnknownTimerFired, "callback data: #{signature}"
-          callback.call
-        end
+      ZMachine.logger.debug("zmachine:reactor:#{__method__}") if ZMachine.debug
+      @wheel.advance.each do |timeout|
+        ZMachine.logger.debug("zmachine:reactor:#{__method__}", callback: timeout.callback) if ZMachine.debug
+        timeout.callback.call
       end
     end
 
-    def signal_loopbreak
+    def wakeup
+      ZMachine.logger.debug("zmachine:reactor:#{__method__}") if ZMachine.debug
       @selector.wakeup if @selector
-    end
-
-    def next_signature
-      @next_signature += 1
-    end
-
-    def _klass_from_handler(klass = Connection, handler = nil)
-      if handler and handler.is_a?(Class)
-        handler
-      elsif handler and handler.is_a?(Connection)
-        # can happen on reconnect
-        handler
-      elsif handler
-        _handler_from_module(klass, handler)
-      else
-        klass
-      end
-    end
-
-    def _handler_from_module(klass, handler)
-      handler::CONNECTION_CLASS
-    rescue NameError
-      handler::const_set(:CONNECTION_CLASS, Class.new(klass) { include handler })
     end
 
   end

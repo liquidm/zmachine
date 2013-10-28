@@ -1,6 +1,8 @@
 # Zmachine
 
-TODO: Write a gem description
+ZMachine is a JRuby Event Reactor based on java.nio.Selector and a HashedWheel
+timer implementation. ZMachine supports TCP and ZeroMQ sockets natively and
+exposes an EventMachine compatible API where possible.
 
 ## Installation
 

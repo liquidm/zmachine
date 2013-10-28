@@ -1,12 +1,4 @@
-require 'spec_helper'
-require 'lib/zmachine/hashed_wheel'
-
-describe ZMachine::HashedWheelTimeout do
-  it 'calculates the stop index correctly'
-  it 'calculates remaining rounds correctly'
-  it 'can be cancelled'
-  it 'supports an action'
-end
+require 'zmachine/hashed_wheel'
 
 describe ZMachine::HashedWheel do
   let(:wheel) { ZMachine::HashedWheel.new(16, 100) }
@@ -35,15 +27,26 @@ describe ZMachine::HashedWheel do
     expect(timedout.length).to eq(1)
   end
 
-  it 'calculates the timeouted set correctly' do
+  it 'calculates the timeout set correctly' do
     now = wheel.reset
     wheel.add 10
     wheel.add 40
     wheel.add 1900
     wheel.add 3300
     wheel.add 4000
-    timedout = wheel.advance( now + 3900 * 1_000_000)
+    timedout = wheel.advance(now + 3900 * 1_000_000)
     expect(timedout).to be
     expect(timedout.length).to eq(4)
   end
+
+  it 'cancels timers correctly' do
+    now = wheel.reset
+    t1 = wheel.add 90
+    t2 = wheel.add 110
+    t1.cancel
+    timedout = wheel.advance(now + 200 * 1_000_000)
+    expect(timedout).to eq([t2])
+    expect(timedout.length).to eq(1)
+  end
+
 end

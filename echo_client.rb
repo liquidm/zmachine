@@ -2,11 +2,12 @@
 
 require 'rubygems'
 require 'bundler/setup'
+require 'madvertise/boot'
 require 'zmachine'
 
-java_import org.zeromq.ZMQ
-java_import org.zeromq.ZMsg
-java_import org.zeromq.ZFrame
+$log.level = :debug
+ZMachine.logger = $log
+ZMachine.debug = true
 
 #set_trace_func proc { |event, file, line, id, binding, classname|
 #  printf "%8s %s:%-2d %10s %8s\n", event, file, line, id, classname
@@ -44,28 +45,9 @@ class TCPEcho < ZMachine::Connection
   end
 end
 
-ZMachine.run {
-  ZMachine.connect("tcp://127.0.0.1:10000", ZMQ::ROUTER, ZMQEcho) do |handler|
-    handler.channel.identity = "client"
-  end
-  #ZMachine.connect("127.0.0.1", 10000, TCPEcho)
-}
-
-#ctx = ZContext.new
-#socket = ctx.create_socket(ZMQ::ROUTER)
-#socket.connect("tcp://127.0.0.1:10000")
-#socket.identity = "client".to_java_bytes
-
-#sleep(1)
-
-#loop do
-#  msg = ZMsg.new_string_msg($i.to_s)
-#  msg.wrap(ZFrame.new("server"))
-#  msg.java_send(:send, [org.zeromq.ZMQ::Socket], socket)
-#  $i += 1
-#  break if $i > 100
-#  #puts ZMsg.recvMsg(socket).inspect
-#end
-
-#socket.close
-#ctx.destroy
+ZMachine.run do
+  #ZMachine.connect("tcp://127.0.0.1:10000", ZMQ::ROUTER, ZMQEcho) do |handler|
+  #  handler.channel.identity = "client"
+  #end
+  ZMachine.connect("127.0.0.1", 10000, TCPEcho)
+end
