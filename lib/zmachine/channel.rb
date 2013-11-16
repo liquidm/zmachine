@@ -1,42 +1,44 @@
+java_import java.nio.ByteBuffer
+
 module ZMachine
   class Channel
 
     attr_accessor :socket
-    attr_reader   :selector
-    attr_accessor :handler
-    attr_accessor :reactor
 
-    attr_reader :comm_inactivity_timeout
-    attr_reader :last_comm_activity
-
-    def initialize(selector)
-      @selector = selector
+    def initialize
+      @inbound_buffer = ByteBuffer.allocate(1024 * 1024)
       @outbound_queue = []
-      @comm_inactivity_timeout = 0
-      @timedout = false
-      mark_active!
+      @close_scheduled = false
     end
 
-    # assigned in seconds!!
-    def comm_inactivity_timeout=(value)
-      # we are in nanos
-      @comm_inactivity_timeout = value * 1000_000_000
+    # methods that need to be implemented in sub classes:
+    #
+    # selectable_fd
+    # bind(address, port = nil)
+    # bound?
+    # accept
+    # connect(address, port = nil)
+    # connection_pending?
+    # finish_connecting
+    # connected?
+    # read_inbound_data
+    # send_data(data)
+    # closed?
+    # peer
+    # write_outbound_data
+
+    def can_send?
+      !@outbound_queue.empty?
     end
 
-    def mark_active!
-      @last_comm_activity = System.nano_time
+    def close(after_writing = false)
+      ZMachine.logger.debug("zmachine:channel:#{__method__}", channel: self, after_writing: after_writing) if ZMachine.debug
+      @close_scheduled = true
+      @outbound_queue.clear unless after_writing
     end
 
-    def timedout?
-      @timedout
-    end
-
-    def timedout!
-      @timedout = true
-    end
-
-    def was_active?(now)
-      @last_comm_activity + @comm_inactivity_timeout >= now
+    def close_after_writing
+      close(true)
     end
 
   end
