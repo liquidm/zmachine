@@ -248,9 +248,9 @@ module ZMachine
     end
 
     def readable!
+      ZMachine.logger.debug("zmachine:connection:#{__method__}", connection: self) if ZMachine.debug
       mark_active!
       data = @channel.read_inbound_data
-      ZMachine.logger.debug("zmachine:connection:#{__method__}", connection: self, data: data) if ZMachine.debug
       receive_data(data) if data
       nil
     end

@@ -12,13 +12,14 @@ module ZMachine
       ZMachine.logger.debug("zmachine:connection_manager:#{__method__}") if ZMachine.debug
       @selector = selector
       @connections = []
+      @zmq_connections = []
       @new_connections = []
       @unbound_connections = []
     end
 
     def idle?
-      @new_connections.size == 0
-      #@connections.none?(&:has_more?) # XXX: iterate all connections????
+      @new_connections.size == 0 and
+      @zmq_connections.none? {|c| c.channel.has_more? } # see comment in #process
     end
 
     def shutdown
@@ -52,6 +53,14 @@ module ZMachine
         process_connection(it.next.attachment)
         it.remove
       end
+      # super ugly, but ZMQ only triggers the FD if and only if you have read
+      # every message from the socket. under load however there will always be
+      # new messages in the mailbox between last recv and next select, which
+      # causes the FD never to be triggered again.
+      # the only mitigation strategy i came up with is iterating over all channels :(
+      @zmq_connections.each do |connection|
+        connection.readable! if connection.channel.has_more?
+      end
     end
 
     def process_connection(connection)
@@ -72,6 +81,7 @@ module ZMachine
         begin
           connection.register(@selector)
           @connections << connection
+          @zmq_connections << connection if connection.channel.is_a?(ZMQChannel)
         rescue ClosedChannelException => e
           ZMachine.logger.exception(e, "failed to add connection")
           @unbound_connections << connection
@@ -88,6 +98,7 @@ module ZMachine
         connection, reason = *connection if connection.is_a?(Array)
         begin
           @connections.delete(connection)
+          @zmq_connections.delete(connection)
           connection.unbind
           connection.close
         rescue Exception => e

@@ -69,6 +69,34 @@ module ZMachine
       @outbound_queue << data
     end
 
+    # to get around iterating over an array in #send_data we pass message parts
+    # as arguments
+    def send1(a)
+      @socket.send_byte_array(a, ZMQ::DONTWAIT)
+    end
+
+    def send2(a, b)
+      @socket.send_byte_array(a, ZMQ::DONTWAIT | ZMQ::DONTWAIT)
+      @socket.send_byte_array(b, ZMQ::DONTWAIT)
+    end
+
+    def send3(a, b, c)
+      @socket.send_byte_array(a, ZMQ::DONTWAIT | ZMQ::DONTWAIT)
+      @socket.send_byte_array(b, ZMQ::DONTWAIT | ZMQ::DONTWAIT)
+      @socket.send_byte_array(c, ZMQ::DONTWAIT)
+    end
+
+    def send4(a, b, c, d)
+      @socket.send_byte_array(a, ZMQ::DONTWAIT | ZMQ::DONTWAIT)
+      @socket.send_byte_array(b, ZMQ::DONTWAIT | ZMQ::DONTWAIT)
+      @socket.send_byte_array(c, ZMQ::DONTWAIT | ZMQ::DONTWAIT)
+      @socket.send_byte_array(d, ZMQ::DONTWAIT)
+    end
+
+    def has_more?
+      @socket.events & ZMQ::Poller::POLLIN == ZMQ::Poller::POLLIN
+    end
+
     def can_send?
       super and (@socket.events & ZMQ::Poller::POLLOUT == ZMQ::Poller::POLLOUT)
     end
