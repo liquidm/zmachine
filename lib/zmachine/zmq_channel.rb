@@ -12,7 +12,7 @@ end
 # this needs to be moved to a seperate file
 class ZMQ
   class Socket
-     def self.create_socket_with_opts(type, opts = {})
+    def self.create_socket_with_opts(type, opts = {})
       socket = ZMachine.context.create_socket(type)
       socket.setLinger(opts[:linger]) if opts[:linger]
       socket.setSndHWM(opts[:sndhwm]) if opts[:sndhwm]
@@ -100,8 +100,6 @@ module ZMachine
         @channel_key.cancel
         @channel_key = nil
       end
-
-      @socket.close
     end
 
     def send_data(data)
@@ -119,7 +117,7 @@ module ZMachine
     def send_msg(msg)
       msg.post(@socket, true)
       return true
-    rescue ZMQException => e
+    rescue ZMQException
       return false
     end
 
