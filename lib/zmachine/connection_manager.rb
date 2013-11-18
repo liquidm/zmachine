@@ -33,6 +33,7 @@ module ZMachine
       connection = build_connection(Connection, handler, *args, &block)
       connection.bind(address, port_or_type)
       @new_connections << connection
+      connection
     end
 
     def connect(address, port_or_type, handler, *args, &block)
@@ -41,6 +42,7 @@ module ZMachine
       connection.connect(address, port_or_type)
       @new_connections << connection
       yield connection if block_given?
+      connection
     rescue java.nio.channels.UnresolvedAddressException
       raise ZMachine::ConnectionError.new('unable to resolve server address')
     end
