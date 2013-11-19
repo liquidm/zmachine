@@ -76,20 +76,20 @@ module ZMachine
     end
 
     def send2(a, b)
-      @socket.send_byte_array(a, ZMQ::DONTWAIT | ZMQ::DONTWAIT)
+      @socket.send_byte_array(a, ZMQ::SNDMORE | ZMQ::DONTWAIT)
       @socket.send_byte_array(b, ZMQ::DONTWAIT)
     end
 
     def send3(a, b, c)
-      @socket.send_byte_array(a, ZMQ::DONTWAIT | ZMQ::DONTWAIT)
-      @socket.send_byte_array(b, ZMQ::DONTWAIT | ZMQ::DONTWAIT)
+      @socket.send_byte_array(a, ZMQ::SNDMORE | ZMQ::DONTWAIT)
+      @socket.send_byte_array(b, ZMQ::SNDMORE | ZMQ::DONTWAIT)
       @socket.send_byte_array(c, ZMQ::DONTWAIT)
     end
 
     def send4(a, b, c, d)
-      @socket.send_byte_array(a, ZMQ::DONTWAIT | ZMQ::DONTWAIT)
-      @socket.send_byte_array(b, ZMQ::DONTWAIT | ZMQ::DONTWAIT)
-      @socket.send_byte_array(c, ZMQ::DONTWAIT | ZMQ::DONTWAIT)
+      @socket.send_byte_array(a, ZMQ::SNDMORE | ZMQ::DONTWAIT)
+      @socket.send_byte_array(b, ZMQ::SNDMORE | ZMQ::DONTWAIT)
+      @socket.send_byte_array(c, ZMQ::SNDMORE | ZMQ::DONTWAIT)
       @socket.send_byte_array(d, ZMQ::DONTWAIT)
     end
 
