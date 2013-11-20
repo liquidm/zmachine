@@ -25,6 +25,13 @@ module ZMachine
       @closed = false
     end
 
+    def identity=(v)
+      @socket.identity = v if @socket
+    end
+    def identity
+      @socket ? @socket.identity : nil
+    end
+
     def selectable_fd
       @socket.fd
     end
