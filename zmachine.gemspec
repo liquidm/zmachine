@@ -2,7 +2,7 @@
 
 Gem::Specification.new do |spec|
   spec.name          = "zmachine"
-  spec.version       = "0.2.0"
+  spec.version       = "0.2.1"
   spec.authors       = ["LiquidM, Inc."]
   spec.email         = ["opensource@liquidm.com"]
   spec.description   = %q{pure JRuby multi-threaded mostly EventMachine compatible event loop}

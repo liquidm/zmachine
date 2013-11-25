@@ -8,10 +8,13 @@ module ZMachine
     extend Forwardable
 
     attr_accessor :channel
+    attr_accessor :args
+    attr_accessor :block
 
     def self.new(*args, &block)
       allocate.instance_eval do
         initialize(*args, &block)
+        @args, @block = args, block
         post_init
         self
       end
@@ -232,8 +235,8 @@ module ZMachine
       client = @channel.accept
       connection_accepted(client) if client.connected?
       ZMachine.logger.debug("zmachine:connection:#{__method__}", connection: self, client: client) if ZMachine.debug
-      self.class.new.tap do |connection|
-        connection.channel = client
+      self.class.new(*@args, &@block).tap do |instance|
+        instance.channel = client
       end
     end
 

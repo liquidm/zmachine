@@ -30,7 +30,7 @@ module ZMachine
 
     def bind(address, port_or_type, handler, *args, &block)
       ZMachine.logger.debug("zmachine:connection_manager:#{__method__}", address: address, port_or_type: port_or_type) if ZMachine.debug
-      connection = build_connection(Connection, handler, *args, &block)
+      connection = build_connection(handler, *args, &block)
       connection.bind(address, port_or_type)
       @new_connections << connection
       connection
@@ -38,7 +38,7 @@ module ZMachine
 
     def connect(address, port_or_type, handler, *args, &block)
       ZMachine.logger.debug("zmachine:connection_manager:#{__method__}", address: address, port_or_type: port_or_type) if ZMachine.debug
-      connection = build_connection(Connection, handler, *args, &block)
+      connection = build_connection(handler, *args, &block)
       connection.connect(address, port_or_type)
       @new_connections << connection
       yield connection if block_given?
@@ -112,23 +112,23 @@ module ZMachine
 
     private
 
-    def build_connection(klass = Connection, handler = nil, *args, &block)
+    def build_connection(handler, *args, &block)
       if handler and handler.is_a?(Class)
         handler.new(*args, &block)
       elsif handler and handler.is_a?(Connection)
         # already initialized connection on reconnect
         handler
       elsif handler
-        connection_from_module(klass, handler).new(*args, &block)
+        connection_from_module(handler).new(*args, &block)
       else
-        klass.new(*args, &block)
+        Connection.new(*args, &block)
       end
     end
 
-    def connection_from_module(klass, handler)
+    def connection_from_module(handler)
       handler::CONNECTION_CLASS
     rescue NameError
-      handler::const_set(:CONNECTION_CLASS, Class.new(klass) { include handler })
+      handler::const_set(:CONNECTION_CLASS, Class.new(Connection) { include handler })
     end
 
   end
