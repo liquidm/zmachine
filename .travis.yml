@@ -1,0 +1,8 @@
+language: ruby
+rvm:
+- jruby
+notifications:
+  email: false
+  hipchat:
+    rooms:
+      secure: QEn6sr/TryfI6Kjy39oXnNwfFxvHXbWNk413X0Ocno7FVbddu1DpN3+8FgfUTL7GTCxKyV4cKni9Zp+hiLrlUO15zk3JDZKzLBW24Ie0VCmhhYQAQWuVYatdo2x16LzyyFijNpvNlIjoRoifzIfF7YMNszgy4FxJ4ThFPp34jIY=

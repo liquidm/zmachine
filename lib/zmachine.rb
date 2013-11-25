@@ -1,7 +1,7 @@
 require 'zmachine/jeromq-0.3.0-SNAPSHOT.jar'
 java_import org.zeromq.ZContext
 
-require 'madvertise/boot'
+require 'liquid/boot'
 
 require 'zmachine/connection'
 require 'zmachine/deferrable'

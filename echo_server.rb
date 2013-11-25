@@ -2,7 +2,7 @@
 
 require 'rubygems'
 require 'bundler/setup'
-require 'madvertise/boot'
+require 'liquid/boot'
 require 'zmachine'
 
 $log.level = :debug
