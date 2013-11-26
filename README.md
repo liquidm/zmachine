@@ -4,6 +4,7 @@ ZMachine is a pure JRuby multi-threaded event loop based on java.nio.Selector
 and a hashed wheel timer implementation. ZMachine supports TCP and ZeroMQ
 sockets natively and exposes an EventMachine compatible API where possible.
 
+[![Gem Version](https://badge.fury.io/rb/zmachine.png)](http://badge.fury.io/rb/zmachine)
 [![Build Status](https://travis-ci.org/liquidm/zmachine.png)](https://travis-ci.org/liquidm/zmachine)
 [![Code Climate](https://codeclimate.com/github/liquidm/zmachine.png)](https://codeclimate.com/github/liquidm/zmachine)
 [![Dependency Status](https://gemnasium.com/liquidm/zmachine.png)](https://gemnasium.com/liquidm/zmachine)
