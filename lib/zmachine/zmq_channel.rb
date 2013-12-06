@@ -28,6 +28,7 @@ module ZMachine
     def identity=(v)
       @socket.identity = v if @socket
     end
+
     def identity
       @socket ? @socket.identity : nil
     end
@@ -59,6 +60,7 @@ module ZMachine
     end
 
     def read_inbound_data
+      return unless has_more?
       data = [@socket.recv_byte_array(0)]
       while @socket.hasReceiveMore
         data << @socket.recv_byte_array(0)

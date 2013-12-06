@@ -83,7 +83,10 @@ module ZMachine
         begin
           connection.register(@selector)
           @connections << connection
-          @zmq_connections << connection if connection.channel.is_a?(ZMQChannel)
+          if connection.channel.is_a?(ZMQChannel)
+            @zmq_connections << connection
+            connection.connection_completed
+          end
         rescue ClosedChannelException => e
           ZMachine.logger.exception(e, "failed to add connection")
           @unbound_connections << connection
