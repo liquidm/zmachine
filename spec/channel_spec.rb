@@ -37,6 +37,7 @@ shared_examples_for "a Channel" do
 
     before(:each) do
       @channel = @server.accept
+      @channel.raw = false
       @client.finish_connecting
     end
 
@@ -159,6 +160,7 @@ describe ZMQChannel do
     @server.bind(address, port_or_type[0])
     @client = klass.new
     @client.connect(address, port_or_type[1])
+    @client.raw = false
   end
 
   after(:each) do

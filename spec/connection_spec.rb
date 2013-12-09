@@ -6,7 +6,9 @@ shared_examples_for "a Connection" do
 
   before(:each) do
     @server = Connection.new.bind(address, port_or_type[0]) { |c| @accepted = c }
+    @server.channel.raw = false
     @client = Connection.new.connect(address, port_or_type[1]) { |c| @connection = c }
+    @client.channel.raw = false
   end
 
   after(:each) do
