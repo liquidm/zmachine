@@ -27,13 +27,13 @@ module ZMachine
 
     def initialize(number_of_slots, tick_length, start_time = System.nano_time)
       @slots = Array.new(number_of_slots) { [] }
-      @tick_length = tick_length * 1_000_000
+      @tick_length = tick_length * 1_000_000_000
       @last = start_time
       @current_tick = 0
     end
 
     def add(timeout, &block)
-      timeout *= 1_000_000 # ms to ns
+      timeout *= 1_000_000_000 # s to ns
       ticks = timeout / @tick_length
       slot  = (@current_tick + ticks) % @slots.length
       HashedWheelTimeout.new(System.nano_time + timeout, &block).tap do |hwt|
@@ -41,14 +41,15 @@ module ZMachine
       end
     end
 
-    def reset(time = System.nano_time)
+    def reset(time = nil)
       @slots = Array.new(@slots.length) { [] }
       @current_tick = 0
-      @last = time
+      @last = time || System.nano_time
     end
 
     # returns all timeouts
-    def advance(now = System.nano_time)
+    def advance(now = nil)
+      now ||= System.nano_time
       passed_ticks = (now - @last) / @tick_length
       result = []
       begin

@@ -40,7 +40,7 @@ module ZMachine
       @next_tick_queue = ConcurrentLinkedQueue.new
       @running = false
       @shutdown_hooks = []
-      @wheel = HashedWheel.new(512, 10)
+      @wheel = HashedWheel.new(512, 0.01)
     end
 
     def add_shutdown_hook(&block)
@@ -53,7 +53,7 @@ module ZMachine
       callback = args.shift || block
       ZMachine.logger.debug("zmachine:reactor:#{__method__}", interval: interval, callback: callback) if ZMachine.debug
       return unless callback
-      @wheel.add((interval.to_f * 1000).to_i, &callback)
+      @wheel.add(interval, &callback)
     end
 
     def bind(server, port_or_type=nil, handler=nil, *args, &block)
@@ -175,7 +175,7 @@ module ZMachine
     def run_timers
       ZMachine.logger.debug("zmachine:reactor:#{__method__}") if ZMachine.debug
       @wheel.advance.each do |timeout|
-        ZMachine.logger.debug("zmachine:reactor:#{__method__}", callback: timeout.callback) if ZMachine.debug
+        ZMachine.logger.info("zmachine:reactor:#{__method__}", callback: timeout.callback) if ZMachine.debug
         timeout.callback.call
       end
     end
