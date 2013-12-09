@@ -43,6 +43,8 @@ module ZMachine
     end
 
     # callbacks
+    def connection_accepted
+    end
 
     def connection_completed
     end
@@ -130,6 +132,7 @@ module ZMachine
       connection = self.class.new(*@args)
       connection.channel = client
       @block.call(connection) if @block
+      connection.connection_accepted
       connection
     end
 
