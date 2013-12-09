@@ -63,7 +63,7 @@ module ZMachine
       @socket.connected?
     end
 
-    def read_inbound_data(raw = false)
+    def read_inbound_data
       ZMachine.logger.debug("zmachine:tcp_channel:#{__method__}", channel: self) if ZMachine.debug
       buffer = @inbound_buffer
       buffer.clear
@@ -71,7 +71,7 @@ module ZMachine
       buffer.flip
       return if buffer.limit == 0
       data = buffer.array[buffer.position...buffer.limit]
-      data = String.from_java_bytes(data) unless raw
+      data = String.from_java_bytes(data) unless @raw
       data
     end
 

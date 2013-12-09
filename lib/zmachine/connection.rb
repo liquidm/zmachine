@@ -10,7 +10,6 @@ module ZMachine
     extend Forwardable
 
     attr_accessor :channel
-    attr_accessor :raw
 
     def self.new(*args)
       allocate.instance_eval do
@@ -149,7 +148,7 @@ module ZMachine
     def readable!
       ZMachine.logger.debug("zmachine:connection:#{__method__}", connection: self) if ZMachine.debug
       mark_active!
-      data = @channel.read_inbound_data(raw)
+      data = @channel.read_inbound_data
       receive_data(data) if data
       nil
     end

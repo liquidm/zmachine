@@ -29,6 +29,11 @@ module ZMachine
     def_delegator :@socket, :identity
     def_delegator :@socket, :identity=
 
+    def initialize
+      super
+      @raw = true
+    end
+
     def selectable_fd
       @socket.fd
     end
@@ -71,10 +76,10 @@ module ZMachine
       @connected
     end
 
-    def read_inbound_data(raw = false)
+    def read_inbound_data
       ZMachine.logger.debug("zmachine:zmq_channel:#{__method__}", channel: self) if ZMachine.debug
       data = ZMsg.recv_msg(@socket)
-      data = String.from_java_bytes(data.first.data) unless raw
+      data = String.from_java_bytes(data.first.data) unless @raw
       data
     end
 

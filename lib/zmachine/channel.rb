@@ -4,10 +4,12 @@ module ZMachine
   class Channel
 
     attr_accessor :socket
+    attr_accessor :raw
 
     def initialize
       @inbound_buffer = ByteBuffer.allocate(1024 * 1024)
       @outbound_queue = []
+      @raw = false
     end
 
     # methods that need to be implemented in sub classes:
