@@ -225,9 +225,9 @@ module ZMachine
     def renew_timer
       @timer.cancel if @timer
       if connection_pending? && @connect_timeout
-        @timer = ZMachine.add_timer(@connect_timeout) { ZMachine.close_connection(self) }
+        @timer = ZMachine.add_timer(@connect_timeout) { ZMachine.close_connection(self, Errno::ETIMEDOUT) }
       elsif @inactivity_timeout
-        @timer = ZMachine.add_timer(@inactivity_timeout) { ZMachine.close_connection(self) }
+        @timer = ZMachine.add_timer(@inactivity_timeout) { ZMachine.close_connection(self, Errno::ETIMEDOUT) }
       end
     end
 

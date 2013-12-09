@@ -71,12 +71,12 @@ module ZMachine
     def process_connection(connection)
       new_connection = connection.process_events
       @new_connections << new_connection if new_connection
-    rescue IOException
-      close_connection(connection)
+    rescue IOException => e
+      close_connection(connection, e)
     end
 
     def close_connection(connection, reason = nil)
-      ZMachine.logger.debug("zmachine:connection_manager:#{__method__}", connection: connection) if ZMachine.debug
+      ZMachine.logger.debug("zmachine:connection_manager:#{__method__}", connection: connection, reason: reason.inspect) if ZMachine.debug
       @unbound_connections << [connection, reason]
     end
 
@@ -106,7 +106,11 @@ module ZMachine
         begin
           @connections.delete(connection)
           @zmq_connections.delete(connection)
-          connection.unbind
+          if connection.method(:unbind).arity != 0
+            connection.unbind(reason)
+          else
+            connection.unbind
+          end
           connection.close
         rescue Exception => e
           ZMachine.logger.exception(e, "failed to unbind connection") if ZMachine.debug

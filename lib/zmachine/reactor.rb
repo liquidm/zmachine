@@ -130,9 +130,9 @@ module ZMachine
     def run_reactor
       ZMachine.logger.debug("zmachine:reactor:#{__method__}") if ZMachine.debug
       run_deferred_callbacks
-      break unless @run_reactor
+      return unless @run_reactor
       run_timers
-      break unless @run_reactor
+      return unless @run_reactor
       @connection_manager.cleanup
       if @connection_manager.idle?
         ZMachine.logger.debug("zmachine:reactor:#{__method__}", select: @heartbeat_interval) if ZMachine.debug
@@ -150,6 +150,7 @@ module ZMachine
 
     def stop_event_loop
       @run_reactor = false
+      @connection_manager.shutdown
       wakeup
     end
 

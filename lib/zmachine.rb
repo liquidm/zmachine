@@ -46,8 +46,8 @@ module ZMachine
     timer_or_sig.cancel # we do not support signatures
   end
 
-  def self.close_connection(connection)
-    reactor.close_connection(connection)
+  def self.close_connection(connection, reason = nil)
+    reactor.close_connection(connection, reason)
   end
 
   def self.connect(server, port_or_type=nil, handler=nil, *args, &block)
