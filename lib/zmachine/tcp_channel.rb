@@ -13,6 +13,7 @@ module ZMachine
     end
 
     def bind(address, port)
+      ZMachine.logger.debug("zmachine:tcp_channel:#{__method__}", channel: self) if ZMachine.debug
       address = InetSocketAddress.new(address, port)
       @socket = ServerSocketChannel.open
       @socket.configure_blocking(false)
@@ -20,10 +21,11 @@ module ZMachine
     end
 
     def bound?
-      @socket.is_a?(ServerSocketChannel) and @socket.bound?
+      @socket.is_a?(ServerSocketChannel) && @socket.bound?
     end
 
     def accept
+      ZMachine.logger.debug("zmachine:tcp_channel:#{__method__}", channel: self) if ZMachine.debug
       client_socket = @socket.accept
       return unless client_socket
       client_socket.configure_blocking(false)
@@ -33,6 +35,7 @@ module ZMachine
     end
 
     def connect(address, port)
+      ZMachine.logger.debug("zmachine:tcp_channel:#{__method__}", channel: self) if ZMachine.debug
       address = InetSocketAddress.new(address, port)
       @socket = SocketChannel.open
       @socket.configure_blocking(false)
@@ -51,60 +54,30 @@ module ZMachine
     end
 
     def finish_connecting
+      ZMachine.logger.debug("zmachine:tcp_channel:#{__method__}", channel: self) if ZMachine.debug
       return unless connection_pending?
-      @socket.finish_connect # XXX: finish_connect might return false
-      return true
+      @socket.finish_connect
     end
 
     def connected?
       @socket.connected?
     end
 
-    def read_inbound_data
+    def read_inbound_data(raw = false)
+      ZMachine.logger.debug("zmachine:tcp_channel:#{__method__}", channel: self) if ZMachine.debug
       buffer = @inbound_buffer
       buffer.clear
       raise IOException.new("EOF") if @socket.read(buffer) == -1
       buffer.flip
       return if buffer.limit == 0
-      String.from_java_bytes(buffer.array[buffer.position...buffer.limit])
+      data = buffer.array[buffer.position...buffer.limit]
+      data = String.from_java_bytes(data) unless raw
+      data
     end
 
-    def send_data(data)
-      raise RuntimeError.new("send_data called after close") if @close_scheduled
-      return unless data
-      data = data.to_java_bytes if data.is_a?(String) # EM compat
-      buffer = ByteBuffer.wrap(data)
-      if buffer.has_remaining
-        @outbound_queue << buffer
-      end
-    end
-
-    def write_outbound_data
-      while can_send?
-        buffer = @outbound_queue.first
-        @socket.write(buffer) if buffer.has_remaining
-        # Did we consume the whole outbound buffer? If yes,
-        # pop it off and keep looping. If no, the outbound network
-        # buffers are full, so break out of here.
-        if buffer.remaining == 0
-          @outbound_queue.shift
-        else
-          break
-        end
-      end
-
-      if can_send?
-        # network buffers are full
-        return false
-      end
-
-      close if @close_scheduled
-      return true
-    end
-
-    def close(after_writing = false)
-      super
-      @socket.close unless can_send?
+    def close!
+      ZMachine.logger.debug("zmachine:tcp_channel:#{__method__}", channel: self) if ZMachine.debug
+      @socket.close
     end
 
     def closed?

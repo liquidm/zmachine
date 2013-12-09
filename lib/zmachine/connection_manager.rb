@@ -19,7 +19,7 @@ module ZMachine
 
     def idle?
       @new_connections.size == 0 and
-      @zmq_connections.none? {|c| c.channel.has_more? } # see comment in #process
+      @zmq_connections.none? {|c| c.channel.can_recv? } # see comment in #process
     end
 
     def shutdown
@@ -30,18 +30,17 @@ module ZMachine
 
     def bind(address, port_or_type, handler, *args, &block)
       ZMachine.logger.debug("zmachine:connection_manager:#{__method__}", address: address, port_or_type: port_or_type) if ZMachine.debug
-      connection = build_connection(handler, *args, &block)
-      connection.bind(address, port_or_type)
+      connection = build_connection(handler, *args)
+      connection.bind(address, port_or_type, &block)
       @new_connections << connection
       connection
     end
 
     def connect(address, port_or_type, handler, *args, &block)
       ZMachine.logger.debug("zmachine:connection_manager:#{__method__}", address: address, port_or_type: port_or_type) if ZMachine.debug
-      connection = build_connection(handler, *args, &block)
-      connection.connect(address, port_or_type)
+      connection = build_connection(handler, *args)
+      connection.connect(address, port_or_type, &block)
       @new_connections << connection
-      yield connection if block_given?
       connection
     rescue java.nio.channels.UnresolvedAddressException
       raise ZMachine::ConnectionError.new('unable to resolve server address')
@@ -55,13 +54,17 @@ module ZMachine
         process_connection(it.next.attachment)
         it.remove
       end
-      # super ugly, but ZMQ only triggers the FD if and only if you have read
-      # every message from the socket. under load however there will always be
-      # new messages in the mailbox between last recv and next select, which
-      # causes the FD never to be triggered again.
-      # the only mitigation strategy i came up with is iterating over all channels :(
+      # super ugly, but ZMQ only triggers the FD if and only if you
+      # have read every message from the socket. under load however
+      # there will always be new messages in the mailbox between last
+      # recv and next select, which causes the FD never to be
+      # triggered again.
+      # the only mitigation strategy i came up with is iterating over all
+      # channels. performance impact shouldn't be too huge, since ZMQ takes
+      # care of all the multiplexing and we only have a small amount of ZMQ
+      # connections in the reactor
       @zmq_connections.each do |connection|
-        connection.readable! if connection.channel.has_more?
+        connection.readable! if connection.channel.can_recv?
       end
     end
 
@@ -72,9 +75,9 @@ module ZMachine
       close_connection(connection)
     end
 
-    def close_connection(connection)
+    def close_connection(connection, reason = nil)
       ZMachine.logger.debug("zmachine:connection_manager:#{__method__}", connection: connection) if ZMachine.debug
-      @unbound_connections << connection
+      @unbound_connections << [connection, reason]
     end
 
     def add_new_connections
@@ -88,8 +91,7 @@ module ZMachine
             connection.connection_completed
           end
         rescue ClosedChannelException => e
-          ZMachine.logger.exception(e, "failed to add connection")
-          @unbound_connections << connection
+          @unbound_connections << [connection, e]
         end
       end
       @new_connections.clear
@@ -115,16 +117,16 @@ module ZMachine
 
     private
 
-    def build_connection(handler, *args, &block)
+    def build_connection(handler, *args)
       if handler and handler.is_a?(Class)
-        handler.new(*args, &block)
+        handler.new(*args)
       elsif handler and handler.is_a?(Connection)
         # already initialized connection on reconnect
         handler
       elsif handler
-        connection_from_module(handler).new(*args, &block)
+        connection_from_module(handler).new(*args)
       else
-        Connection.new(*args, &block)
+        Connection.new(*args)
       end
     end
 
