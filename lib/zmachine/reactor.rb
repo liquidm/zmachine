@@ -92,9 +92,10 @@ module ZMachine
     end
 
     def reconnect(server, port_or_type, handler)
-      return if handler && handler.channel.is_a?(ZMQChannel)
+      return handler if handler && handler.channel.is_a?(ZMQChannel)
       ZMachine.logger.debug("zmachine:reactor:#{__method__}", server: server, port_or_type: port_or_type) if ZMachine.debug
-      @connection_manager.connect(server, port_or_type, handler)
+      return handler if handler.connected?
+      connect(server, port_or_type, handler)
     end
 
     def run(callback=nil, shutdown_hook=nil, &block)

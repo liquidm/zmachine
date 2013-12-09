@@ -2,6 +2,7 @@ java_import java.nio.channels.ClosedChannelException
 
 require 'zmachine/tcp_channel'
 require 'zmachine/zmq_channel'
+require 'set'
 
 module ZMachine
   class ConnectionManager
@@ -11,10 +12,10 @@ module ZMachine
     def initialize(selector)
       ZMachine.logger.debug("zmachine:connection_manager:#{__method__}") if ZMachine.debug
       @selector = selector
-      @connections = []
-      @zmq_connections = []
-      @new_connections = []
-      @unbound_connections = []
+      @connections = Set.new
+      @zmq_connections = Set.new
+      @new_connections = Set.new
+      @unbound_connections = Set.new
     end
 
     def idle?
@@ -81,7 +82,7 @@ module ZMachine
     end
 
     def add_new_connections
-      @new_connections.compact.each do |connection|
+      @new_connections.each do |connection|
         ZMachine.logger.debug("zmachine:connection_manager:#{__method__}", connection: connection) if ZMachine.debug
         begin
           connection.register(@selector)
@@ -95,6 +96,10 @@ module ZMachine
         end
       end
       @new_connections.clear
+    end
+
+    def is_connected?(connection)
+      @connections.include?(connection)
     end
 
     def cleanup

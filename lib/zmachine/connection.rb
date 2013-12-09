@@ -165,7 +165,7 @@ module ZMachine
 
     def register(selector)
       ZMachine.logger.debug("zmachine:connection:#{__method__}", connection: self, fd: @channel.selectable_fd) if ZMachine.debug
-      @channel_key ||= @channel.selectable_fd.register(selector, current_events, self)
+      @channel_key = @channel.selectable_fd.register(selector, current_events, self)
     end
 
     def valid?
