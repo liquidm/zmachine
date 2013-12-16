@@ -28,6 +28,7 @@ module ZMachine
       @channel = klass.new
       @channel.bind(address, port_or_type)
       @block = block
+      @block.call(self) if @block && @channel.is_a?(ZMQChannel)
       self
     end
 

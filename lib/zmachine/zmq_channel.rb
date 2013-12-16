@@ -78,6 +78,7 @@ module ZMachine
 
     def read_inbound_data
       ZMachine.logger.debug("zmachine:zmq_channel:#{__method__}", channel: self) if ZMachine.debug
+      return nil unless can_recv?
       data = ZMsg.recv_msg(@socket)
       data = String.from_java_bytes(data.first.data) unless @raw
       data

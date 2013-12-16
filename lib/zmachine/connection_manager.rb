@@ -116,7 +116,7 @@ module ZMachine
           else
             connection.unbind
           end
-          connection.close
+          connection.channel.close!
         rescue Exception => e
           ZMachine.logger.exception(e, "failed to unbind connection") if ZMachine.debug
         end

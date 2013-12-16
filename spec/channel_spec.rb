@@ -38,6 +38,7 @@ shared_examples_for "a Channel" do
     before(:each) do
       @channel = @server.accept
       @channel.raw = false
+      ZMQChannel.any_instance.stub(:can_recv?) { true }
       @client.finish_connecting
     end
 
@@ -84,7 +85,7 @@ shared_examples_for "a Channel" do
     end
 
     it 'closes the connection after writing' do
-      channel = @server.accept
+      @server.accept
       @client.finish_connecting
       @client.send_data(data)
       @client.close(true)
