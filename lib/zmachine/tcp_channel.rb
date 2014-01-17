@@ -21,7 +21,7 @@ module ZMachine
     end
 
     def bound?
-      @socket.is_a?(ServerSocketChannel) && @socket.bound?
+      @socket.is_a?(ServerSocketChannel) && @socket.socket.bound?
     end
 
     def accept
