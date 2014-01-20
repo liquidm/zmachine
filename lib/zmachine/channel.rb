@@ -1,4 +1,5 @@
-java_import java.nio.ByteBuffer
+java_import 'java.nio.ByteBuffer'
+java_import 'java.util.concurrent.ConcurrentLinkedQueue'
 
 module ZMachine
   class Channel
@@ -8,7 +9,7 @@ module ZMachine
 
     def initialize
       @inbound_buffer = ByteBuffer.allocate(1024 * 1024)
-      @outbound_queue = []
+      @outbound_queue = ConcurrentLinkedQueue.new
       @raw = false
     end
 
@@ -38,20 +39,21 @@ module ZMachine
       return unless data
       buffer = ByteBuffer.wrap(data)
       if buffer.has_remaining
-        @outbound_queue << buffer
+        @outbound_queue.add(buffer)
       end
     end
 
     def write_outbound_data
       ZMachine.logger.debug("zmachine:channel:#{__method__}", channel: self, can_send: can_send?) if ZMachine.debug
       while can_send?
-        buffer = @outbound_queue.first
+        buffer = @outbound_queue.peek
+        break unless buffer
         @socket.write(buffer) if buffer.has_remaining
         # Did we consume the whole outbound buffer? If yes,
         # pop it off and keep looping. If no, the outbound network
         # buffers are full, so break out of here.
         break if buffer.has_remaining
-        @outbound_queue.shift
+        @outbound_queue.poll
       end
       maybe_close_with_callback
     end
