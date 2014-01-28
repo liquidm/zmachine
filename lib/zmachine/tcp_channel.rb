@@ -29,9 +29,8 @@ module ZMachine
       client_socket = @socket.accept
       return unless client_socket
       client_socket.configure_blocking(false)
-      TCPChannel.new.tap do |channel|
-        channel.socket = client_socket
-      end
+      channel = TCPChannel.new
+      channel.socket = client_socket
     end
 
     def connect(address, port)
