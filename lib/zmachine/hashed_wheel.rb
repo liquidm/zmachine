@@ -37,7 +37,8 @@ module ZMachine
       ticks = timeout / @tick_length
       slot = (@current_tick + ticks) % @slots.length
       deadline = System.nano_time + timeout
-      @slots[slot] << HashedWheelTimeout.new(deadline, &block)
+      @slots[slot] << hwt = HashedWheelTimeout.new(deadline, &block)
+      hwt
     end
 
     def reset(time = nil)

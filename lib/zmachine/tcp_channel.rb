@@ -31,6 +31,7 @@ module ZMachine
       client_socket.configure_blocking(false)
       channel = TCPChannel.new
       channel.socket = client_socket
+      channel
     end
 
     def connect(address, port)
