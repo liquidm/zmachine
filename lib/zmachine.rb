@@ -59,11 +59,11 @@ module ZMachine
   end
 
   def self.heartbeat_interval
-    reactor.heartbeat_interval
+    @heartbeat_interval
   end
 
   def self.heartbeat_interval=(time)
-    reactor.heartbeat_interval = time
+    @heartbeat_interval = time
   end
 
   def self.next_tick(callback=nil, &block)

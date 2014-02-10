@@ -10,6 +10,7 @@ module ZMachine
     extend Forwardable
 
     attr_accessor :channel
+    attr_reader :timer
 
     def self.new(*args)
       allocate.instance_eval do

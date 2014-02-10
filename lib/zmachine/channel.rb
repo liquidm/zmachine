@@ -68,11 +68,12 @@ module ZMachine
     end
 
     def maybe_close_with_callback
+      return false unless @close_scheduled
       ZMachine.logger.debug("zmachine:channel:#{__method__}", channel: self, can_send: can_send?) if ZMachine.debug
       return false if can_send?
-      return true unless @close_scheduled
-      close!
       @closed_callback.call if @closed_callback
+      @closed_callback = nil
+      close!
       return true
     end
 

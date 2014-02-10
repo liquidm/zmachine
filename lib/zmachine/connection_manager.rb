@@ -105,23 +105,26 @@ module ZMachine
     def cleanup
       return if @unbound_connections.empty?
       ZMachine.logger.debug("zmachine:connection_manager:#{__method__}") if ZMachine.debug
-      @unbound_connections.each do |connection|
+      unbound_connections = @unbound_connections
+      @unbound_connections = Set.new
+      unbound_connections.each do |connection|
         reason = nil
         connection, reason = *connection if connection.is_a?(Array)
         begin
-          @connections.delete(connection)
-          @zmq_connections.delete(connection)
           if connection.method(:unbind).arity != 0
             connection.unbind(reason)
           else
             connection.unbind
           end
-          connection.channel.close!
+          if connection.channel.maybe_close_with_callback
+            connection.timer.cancel
+            @connections.delete(connection)
+            @zmq_connections.delete(connection)
+          end
         rescue Exception => e
           ZMachine.logger.exception(e, "failed to unbind connection") if ZMachine.debug
         end
       end
-      @unbound_connections.clear
     end
 
     private

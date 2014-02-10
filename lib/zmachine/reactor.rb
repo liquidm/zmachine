@@ -35,11 +35,11 @@ module ZMachine
     end
 
     def initialize
-      # a 10 ms tick wheel with 512 slots => ~5s for a round
-      @heartbeat_interval = 0.5 # coarse grained by default
+      @heartbeat_interval = ZMachine.heartbeat_interval || 0.5 # coarse grained by default
       @next_tick_queue = ConcurrentLinkedQueue.new
       @running = false
       @shutdown_hooks = []
+      # a 10 ms tick wheel with 512 slots => ~5s for a round
       @wheel = HashedWheel.new(512, 0.01)
     end
 
