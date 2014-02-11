@@ -8,6 +8,11 @@ require 'zmachine/channel'
 module ZMachine
   class TCPChannel < Channel
 
+    def initialize
+      super
+      @buffer = Thread.current[:tcp_channel_buffer] ||= ByteBuffer.allocate(1024 * 1024)
+    end
+
     def selectable_fd
       @socket
     end
@@ -65,12 +70,11 @@ module ZMachine
 
     def read_inbound_data
       ZMachine.logger.debug("zmachine:tcp_channel:#{__method__}", channel: self) if ZMachine.debug
-      buffer = @inbound_buffer
-      buffer.clear
-      raise IOException.new("EOF") if @socket.read(buffer) == -1
-      buffer.flip
-      return if buffer.limit == 0
-      data = buffer.array[buffer.position...buffer.limit]
+      @buffer.clear
+      raise IOException.new("EOF") if @socket.read(@buffer) == -1
+      @buffer.flip
+      return if @buffer.limit == 0
+      data = java.util.Arrays.copyOfRange(@buffer.array, @buffer.position, @buffer.limit)
       data = String.from_java_bytes(data) unless @raw
       data
     end
