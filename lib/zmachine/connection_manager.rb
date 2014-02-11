@@ -15,7 +15,7 @@ module ZMachine
       @connections = Set.new
       @zmq_connections = Set.new
       @new_connections = Set.new
-      @unbound_connections = Set.new
+      @closing_connections = Set.new
     end
 
     def idle?
@@ -25,7 +25,7 @@ module ZMachine
 
     def shutdown
       ZMachine.logger.debug("zmachine:connection_manager:#{__method__}") if ZMachine.debug
-      @unbound_connections += @connections
+      @closing_connections += @connections
       cleanup
     end
 
@@ -73,12 +73,12 @@ module ZMachine
       new_connection = connection.process_events
       @new_connections << new_connection if new_connection
     rescue IOException => e
-      close_connection(connection, e)
+      close_connection(connection, false, e)
     end
 
-    def close_connection(connection, reason = nil)
-      ZMachine.logger.debug("zmachine:connection_manager:#{__method__}", connection: connection, reason: reason.inspect) if ZMachine.debug
-      @unbound_connections << [connection, reason]
+    def close_connection(connection, after_writing = false, reason = nil)
+      ZMachine.logger.debug("zmachine:connection_manager:#{__method__}", connection: connection, after_writing: after_writing, reason: reason.inspect) if ZMachine.debug
+      @closing_connections << [connection, after_writing, reason]
     end
 
     def add_new_connections
@@ -92,7 +92,7 @@ module ZMachine
             connection.connection_completed
           end
         rescue ClosedChannelException => e
-          @unbound_connections << [connection, e]
+          @closing_connections << [connection, false, e]
         end
       end
       @new_connections.clear
@@ -103,28 +103,35 @@ module ZMachine
     end
 
     def cleanup
-      return if @unbound_connections.empty?
+      return if @closing_connections.empty?
       ZMachine.logger.debug("zmachine:connection_manager:#{__method__}") if ZMachine.debug
-      unbound_connections = @unbound_connections
-      @unbound_connections = Set.new
-      unbound_connections.each do |connection|
-        reason = nil
-        connection, reason = *connection if connection.is_a?(Array)
-        begin
-          if connection.method(:unbind).arity != 0
-            connection.unbind(reason)
-          else
-            connection.unbind
-          end
-          if connection.channel.maybe_close_with_callback
-            connection.timer.cancel
-            @connections.delete(connection)
-            @zmq_connections.delete(connection)
-          end
-        rescue Exception => e
-          ZMachine.logger.exception(e, "failed to unbind connection") if ZMachine.debug
-        end
+      closing_connections = @closing_connections
+      @closing_connections = Set.new
+      closing_connections.each do |connection|
+        unbind_connection(connection)
       end
+    end
+
+    def unbind_connection(connection)
+      ZMachine.logger.debug("zmachine:connection_manager:#{__method__}", connection: connection) if ZMachine.debug
+      after_writing = false
+      reason = nil
+      connection, after_writing, reason = *connection if connection.is_a?(Array)
+      if connection.method(:unbind).arity != 0
+        connection.unbind(reason)
+      else
+        connection.unbind
+      end
+      if after_writing && connection.can_send?
+        ZMachine.close_connection(connection, true)
+      else
+        connection.close!
+        connection.timer.cancel
+        @connections.delete(connection)
+        @zmq_connections.delete(connection)
+      end
+    rescue Exception => e
+      ZMachine.logger.exception(e, "failed to unbind connection") if ZMachine.debug
     end
 
     private

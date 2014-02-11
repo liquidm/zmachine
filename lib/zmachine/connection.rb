@@ -62,14 +62,13 @@ module ZMachine
     # EventMachine Connection API
 
     def_delegator :@channel, :bound?
+    def_delegator :@channel, :can_send?
     def_delegator :@channel, :closed?
     def_delegator :@channel, :connected?
     def_delegator :@channel, :connection_pending?
 
     def close_connection(after_writing = false)
-      @channel.close(after_writing) do
-        ZMachine.close_connection(self)
-      end
+      ZMachine.close_connection(self, after_writing)
     end
 
     alias :close :close_connection
@@ -79,6 +78,11 @@ module ZMachine
     end
 
     alias :close_after_writing close_connection_after_writing
+
+    def close!
+      @timer.cancel if @timer
+      @channel.close!
+    end
 
     def comm_inactivity_timeout
       @inactivity_timeout
@@ -214,8 +218,7 @@ module ZMachine
         readable! if @channel_key.readable?
       end
     rescue Java::JavaNioChannels::CancelledKeyException
-      # channel may have been closed by write handler. ignore exception and
-      # wait for cleanup
+      ZMachine.close_connection(self)
     end
 
     def mark_active!
@@ -226,9 +229,9 @@ module ZMachine
     def renew_timer
       @timer.cancel if @timer
       if connection_pending? && @connect_timeout
-        @timer = ZMachine.add_timer(@connect_timeout) { ZMachine.close_connection(self, Errno::ETIMEDOUT) }
+        @timer = ZMachine.add_timer(@connect_timeout) { ZMachine.close_connection(self, true, Errno::ETIMEDOUT) }
       elsif @inactivity_timeout
-        @timer = ZMachine.add_timer(@inactivity_timeout) { ZMachine.close_connection(self, Errno::ETIMEDOUT) }
+        @timer = ZMachine.add_timer(@inactivity_timeout) { ZMachine.close_connection(self, true, Errno::ETIMEDOUT) }
       end
     end
 

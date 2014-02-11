@@ -12,8 +12,8 @@ shared_examples_for "a Connection" do
   end
 
   after(:each) do
-    @client.close
-    @server.close
+    @client.close!
+    @server.close!
     ZMachine.context.destroy
   end
 

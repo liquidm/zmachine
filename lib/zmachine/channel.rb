@@ -55,26 +55,13 @@ module ZMachine
         break if buffer.has_remaining
         @outbound_queue.poll
       end
-      maybe_close_with_callback
     end
 
-    def close(after_writing = false, &block)
+    def close
       return true if closed?
-      ZMachine.logger.debug("zmachine:channel:#{__method__}", channel: self, after_writing: after_writing, caller: caller[0].inspect) if ZMachine.debug
-      @close_scheduled = true
-      @closed_callback = block if block
-      @outbound_queue.clear unless after_writing
-      maybe_close_with_callback
-    end
-
-    def maybe_close_with_callback
-      return false unless @close_scheduled
-      ZMachine.logger.debug("zmachine:channel:#{__method__}", channel: self, can_send: can_send?) if ZMachine.debug
-      return false if can_send?
-      @closed_callback.call if @closed_callback
-      @closed_callback = nil
+      ZMachine.logger.debug("zmachine:channel:#{__method__}", channel: self, caller: caller[0].inspect) if ZMachine.debug
+      @outbound_queue.clear
       close!
-      return true
     end
 
   end

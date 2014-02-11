@@ -62,9 +62,9 @@ module ZMachine
       @connection_manager.bind(server, port_or_type, handler, *args, &block)
     end
 
-    def close_connection(connection, reason = nil)
+    def close_connection(connection, after_writing = false, reason = nil)
       return true unless @connection_manager
-      @connection_manager.close_connection(connection, reason)
+      @connection_manager.close_connection(connection, after_writing, reason)
     end
 
     def connect(server, port_or_type=nil, handler=nil, *args, &block)

@@ -44,7 +44,7 @@ shared_examples_for "a Channel" do
 
     it 'writes outbound buffers to the socket' do
       @client.send_data(data)
-      expect(@client.write_outbound_data).to eq(true)
+      expect(@client.can_send?).to eq(true)
     end
 
     it 'receives data sent from the client' do
@@ -82,16 +82,6 @@ shared_examples_for "a Channel" do
       channel = @server.accept
       channel.close
       expect(channel).to be_closed
-    end
-
-    it 'closes the connection after writing' do
-      @server.accept
-      @client.finish_connecting
-      @client.send_data(data)
-      @client.close(true)
-      expect(@client).to be_connected
-      @client.write_outbound_data
-      expect(@client).not_to be_connected
     end
 
   end
@@ -135,9 +125,9 @@ describe TCPChannel do
       channel = @server.accept
       @client.finish_connecting
       channel.send_data(data)
-      channel.close(true)
-      expect(channel).to be_connected
       channel.write_outbound_data
+      expect(channel).to be_connected
+      channel.close
       expect(channel).not_to be_connected
       expect(@client).to be_connected
       @client.read_inbound_data
