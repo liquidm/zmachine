@@ -15,7 +15,7 @@ module ZMachine
       @connections = Set.new
       @zmq_connections = Set.new
       @new_connections = Set.new
-      @closing_connections = Set.new
+      @closing_connections = []
     end
 
     def idle?
@@ -25,7 +25,7 @@ module ZMachine
 
     def shutdown
       ZMachine.logger.debug("zmachine:connection_manager:#{__method__}") if ZMachine.debug
-      @closing_connections += @connections
+      @closing_connections += @connections.to_a
       cleanup
     end
 
@@ -106,14 +106,13 @@ module ZMachine
       return if @closing_connections.empty?
       ZMachine.logger.debug("zmachine:connection_manager:#{__method__}") if ZMachine.debug
       closing_connections = @closing_connections
-      @closing_connections = Set.new
+      @closing_connections = []
       closing_connections.each do |connection|
         unbind_connection(connection)
       end
     end
 
     def unbind_connection(connection)
-      ZMachine.logger.debug("zmachine:connection_manager:#{__method__}", connection: connection) if ZMachine.debug
       after_writing = false
       reason = nil
       connection, after_writing, reason = *connection if connection.is_a?(Array)
@@ -122,6 +121,7 @@ module ZMachine
       else
         connection.unbind
       end
+      ZMachine.logger.debug("zmachine:connection_manager:#{__method__}", connection: connection, after_writing: after_writing, can_send: connection.can_send?) if ZMachine.debug
       if after_writing && connection.can_send?
         ZMachine.close_connection(connection, true)
       else

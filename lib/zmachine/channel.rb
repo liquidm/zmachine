@@ -29,7 +29,7 @@ module ZMachine
     # write_outbound_data
 
     def can_send?
-      !@outbound_queue.empty?
+      connected? && !@outbound_queue.empty?
     end
 
     def send_data(data)
