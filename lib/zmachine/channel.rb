@@ -8,7 +8,6 @@ module ZMachine
     attr_accessor :raw
 
     def initialize
-      @inbound_buffer = ByteBuffer.allocate(1024 * 1024)
       @outbound_queue = ConcurrentLinkedQueue.new
       @raw = false
     end
