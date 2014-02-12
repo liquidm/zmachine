@@ -40,7 +40,7 @@ module ZMachine
       @running = false
       @shutdown_hooks = []
       # a 10 ms tick wheel with 512 slots => ~5s for a round
-      @wheel = HashedWheel.new(512, 0.01)
+      @wheel = HashedWheel.new(512, 10)
     end
 
     def add_shutdown_hook(&block)
