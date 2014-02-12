@@ -126,7 +126,6 @@ module ZMachine
         ZMachine.close_connection(connection, true)
       else
         connection.close!
-        connection.timer.cancel
         @connections.delete(connection)
         @zmq_connections.delete(connection)
       end

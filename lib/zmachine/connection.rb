@@ -89,7 +89,7 @@ module ZMachine
     end
 
     def comm_inactivity_timeout=(value)
-      @inactivity_timeout = value
+      @inactivity_timeout = (value * 1000).to_i # s to ms for backwards compat
     end
 
     alias :set_comm_inactivity_timeout :comm_inactivity_timeout=
@@ -113,7 +113,7 @@ module ZMachine
     end
 
     def pending_connect_timeout=(value)
-      @connect_timeout = value
+      @connect_timeout = (value * 1000).to_i # s to ms for backwards compat
     end
 
     alias :set_pending_connect_timeout :pending_connect_timeout=

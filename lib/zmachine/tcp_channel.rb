@@ -65,6 +65,7 @@ module ZMachine
     end
 
     def connected?
+      return false if @socket.is_a?(ServerSocketChannel)
       @socket.connected?
     end
 

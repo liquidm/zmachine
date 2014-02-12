@@ -94,7 +94,6 @@ module ZMachine
     def reconnect(server, port_or_type, handler)
       return handler if handler && handler.channel.is_a?(ZMQChannel)
       ZMachine.logger.debug("zmachine:reactor:#{__method__}", server: server, port_or_type: port_or_type) if ZMachine.debug
-      return handler if handler.connected?
       connect(server, port_or_type, handler)
     end
 
@@ -176,7 +175,7 @@ module ZMachine
     def run_timers
       ZMachine.logger.debug("zmachine:reactor:#{__method__}") if ZMachine.debug
       @wheel.advance.each do |timeout|
-        ZMachine.logger.info("zmachine:reactor:#{__method__}", callback: timeout.callback) if ZMachine.debug
+        ZMachine.logger.info("zmachine:reactor:#{__method__}", callback: timeout.callback, delta: System.nano_time - timeout.deadline) if ZMachine.debug
         timeout.callback.call
       end
     end
