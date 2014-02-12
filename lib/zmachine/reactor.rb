@@ -175,7 +175,7 @@ module ZMachine
     def run_timers
       ZMachine.logger.debug("zmachine:reactor:#{__method__}") if ZMachine.debug
       @wheel.advance.each do |timeout|
-        ZMachine.logger.info("zmachine:reactor:#{__method__}", callback: timeout.callback, delta: System.nano_time - timeout.deadline) if ZMachine.debug
+        ZMachine.logger.info("zmachine:reactor:#{__method__}", callback: timeout.callback) if ZMachine.debug
         timeout.callback.call
       end
     end
