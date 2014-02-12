@@ -53,7 +53,7 @@ module ZMachine
       callback = args.shift || block
       ZMachine.logger.debug("zmachine:reactor:#{__method__}", interval: interval, callback: callback) if ZMachine.debug
       return unless callback
-      @wheel.add(interval, &callback)
+      @wheel.add((interval * 1000).to_i, &callback)
     end
 
     def bind(server, port_or_type=nil, handler=nil, *args, &block)
