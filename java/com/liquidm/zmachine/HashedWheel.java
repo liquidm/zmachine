@@ -3,21 +3,33 @@ package com.liquidm.zmachine;
 import java.lang.System;
 import java.util.ArrayList;
 import java.util.Iterator;
+import java.util.SortedSet;
+import java.util.TreeSet;
 import java.util.concurrent.Callable;
 
 public class HashedWheel
 {
-	private class Timeout
+	private class Timeout implements Comparable<Timeout>
 	{
-		long deadline;
-		Object callback;
-		boolean canceled;
+		private long deadline;
+		private Object callback;
+		private boolean canceled;
 
 		public Timeout(long deadline, Object callback)
 		{
 			this.deadline = deadline;
 			this.callback = callback;
 			this.canceled = false;
+		}
+
+		public int compareTo(Timeout other)
+		{
+			return (int)(this.deadline - other.getDeadline());
+		}
+
+		public long getDeadline()
+		{
+			return this.deadline;
 		}
 
 		public Object getCallback()
@@ -37,9 +49,11 @@ public class HashedWheel
 	}
 
 	int number_of_slots;
+	ArrayList<SortedSet<Timeout>> slots;
+
 	long tick_length;
-	Object[] slots;
 	int current_tick;
+
 	long last;
 
 	public HashedWheel(int number_of_slots, long tick_length)
@@ -49,8 +63,7 @@ public class HashedWheel
 		reset();
 	}
 
-	@SuppressWarnings("unchecked")
-	public Object[] getSlots()
+	public ArrayList<SortedSet<Timeout>> getSlots()
 	{
 		return this.slots;
 	}
@@ -64,12 +77,12 @@ public class HashedWheel
 	public Timeout add(long timeout, Object callback)
 	{
 		timeout = timeout * 1000000; // ms to ns
+		long deadline = System.nanoTime() + timeout;
 		long ticks = timeout / this.tick_length;
 		int slot = (int)((this.current_tick + ticks) % this.number_of_slots);
-		long deadline = System.nanoTime() + timeout;
 		Timeout hwt = new Timeout(deadline, callback);
-		ArrayList<Timeout> list = (ArrayList<Timeout>) this.slots[slot];
-		list.add(hwt);
+		SortedSet<Timeout> timeouts = this.slots.get(slot);
+		timeouts.add(hwt);
 		return hwt;
 	}
 
@@ -80,9 +93,9 @@ public class HashedWheel
 
 	public long reset(long last)
 	{
-		this.slots = new Object[this.number_of_slots];
+		this.slots = new ArrayList<SortedSet<Timeout>>(this.number_of_slots);
 		for (int i = 0; i < this.number_of_slots; i++) {
-			this.slots[i] = new ArrayList<Timeout>();
+			this.slots.add(i, new TreeSet<Timeout>());
 		}
 		this.current_tick = 0;
 		this.last = last;
@@ -101,15 +114,18 @@ public class HashedWheel
 		ArrayList<Timeout> result = new ArrayList<Timeout>();
 		do {
 			this.current_tick = this.current_tick % this.number_of_slots;
-			Iterator<Timeout> it = ((ArrayList<Timeout>)this.slots[this.current_tick]).iterator();
+			SortedSet<Timeout> timeouts = this.slots.get(this.current_tick);
+			Iterator<Timeout> it = timeouts.iterator();
 			while (it.hasNext()) {
 				Timeout timeout = it.next();
-				if (timeout.deadline < now) {
-					if (!timeout.isCanceled()) {
-						result.add(timeout);
-					}
-					it.remove();
+				long deadline = timeout.getDeadline();
+				if (deadline > now) {
+					break;
 				}
+				if (!timeout.isCanceled()) {
+					result.add(timeout);
+				}
+				it.remove();
 			}
 			this.current_tick += 1;
 			passed_ticks -= 1;
