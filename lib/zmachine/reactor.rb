@@ -131,7 +131,7 @@ module ZMachine
       ZMachine.logger.debug("zmachine:reactor:#{__method__}") if ZMachine.debug
       run_deferred_callbacks
       return unless @run_reactor
-      run_timers
+      @wheel.advance
       return unless @run_reactor
       @connection_manager.cleanup
       if @connection_manager.idle?
@@ -169,14 +169,6 @@ module ZMachine
       ZMachine.logger.debug("zmachine:reactor:#{__method__}") if ZMachine.debug
       while callback = @next_tick_queue.poll
         callback.call
-      end
-    end
-
-    def run_timers
-      ZMachine.logger.debug("zmachine:reactor:#{__method__}") if ZMachine.debug
-      @wheel.advance.each do |timeout|
-        ZMachine.logger.info("zmachine:reactor:#{__method__}", callback: timeout.callback) if ZMachine.debug
-        timeout.callback.call
       end
     end
 

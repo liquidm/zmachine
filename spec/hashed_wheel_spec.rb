@@ -20,7 +20,7 @@ describe ZMachine::HashedWheel do
     wheel.add 10
     wheel.add 50
     timedout = wheel.advance(now + 30 * 1_000_000)
-    expect(timedout.length).to eq(1)
+    expect(timedout).to eq(1)
   end
 
   it 'calculates the timeout set correctly' do
@@ -31,18 +31,17 @@ describe ZMachine::HashedWheel do
     wheel.add 3300
     wheel.add 4000
     timedout = wheel.advance(now + 3900 * 1_000_000)
-    expect(timedout).to be
-    expect(timedout.length).to eq(4)
+    expect(timedout).to eq(4)
   end
 
   it 'cancels timers correctly' do
     now = wheel.reset
-    t1 = wheel.add 90
-    t2 = wheel.add 110
-    t1.cancel
+    result = nil
+    wheel.add(90, -> { result = true })
+    wheel.add(110, -> { result = false }).cancel
     timedout = wheel.advance(now + 200 * 1_000_000)
-    expect(timedout.first).to eq(t2)
-    expect(timedout.length).to eq(1)
+    expect(result).to eq(true)
+    expect(timedout).to eq(2)
   end
 
 end

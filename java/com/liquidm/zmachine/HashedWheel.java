@@ -12,10 +12,10 @@ public class HashedWheel
 	private class Timeout implements Comparable<Timeout>
 	{
 		private long deadline;
-		private Object callback;
+		private Callable<Object> callback;
 		private boolean canceled;
 
-		public Timeout(long deadline, Object callback)
+		public Timeout(long deadline, Callable<Object> callback)
 		{
 			this.deadline = deadline;
 			this.callback = callback;
@@ -37,8 +37,17 @@ public class HashedWheel
 			return this.callback;
 		}
 
+		public void call() throws Exception
+		{
+			if (this.callback != null) {
+				this.callback.call();
+				this.cancel();
+			}
+		}
+
 		public void cancel()
 		{
+			this.callback = null;
 			this.canceled = true;
 		}
 
@@ -74,7 +83,7 @@ public class HashedWheel
 	}
 
 	@SuppressWarnings("unchecked")
-	public Timeout add(long timeout, Object callback)
+	public Timeout add(long timeout, Callable<Object> callback)
 	{
 		timeout = timeout * 1000000; // ms to ns
 		long deadline = System.nanoTime() + timeout;
@@ -102,16 +111,15 @@ public class HashedWheel
 		return last;
 	}
 
-	public ArrayList<Timeout> advance()
+	public int advance() throws Exception
 	{
 		return advance(System.nanoTime());
 	}
 
-	@SuppressWarnings("unchecked")
-	public ArrayList<Timeout> advance(long now)
+	public int advance(long now) throws Exception
 	{
+		int timedout = 0;
 		long passed_ticks = (now - this.last) / this.tick_length;
-		ArrayList<Timeout> result = new ArrayList<Timeout>();
 		do {
 			this.current_tick = this.current_tick % this.number_of_slots;
 			SortedSet<Timeout> timeouts = this.slots.get(this.current_tick);
@@ -122,15 +130,14 @@ public class HashedWheel
 				if (deadline > now) {
 					break;
 				}
-				if (!timeout.isCanceled()) {
-					result.add(timeout);
-				}
+				timedout++;
+				timeout.call();
 				it.remove();
 			}
 			this.current_tick += 1;
 			passed_ticks -= 1;
 		} while (passed_ticks > 0);
 		this.last = now;
-		return result;
+		return timedout;
 	}
 }
