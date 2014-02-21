@@ -11,6 +11,8 @@ class ZMQ
     # for performance reason we alias the method here (otherwise it uses reflections all the time!)
     # super ugly, since we need to dynamically infer the java class of byte[]
     java_alias :send_byte_buffer, :sendByteBuffer, [Java::JavaNio::ByteBuffer.java_class, Java::int]
+    java_alias :send_byte_array, :send, [[].to_java(:byte).java_class, Java::int]
+    java_alias :recv_byte_array, :recv, [Java::int]
 
     def write(buffer)
       bytes = send_byte_buffer(buffer, 0)
@@ -26,6 +28,11 @@ module ZMachine
 
     def_delegator :@socket, :identity
     def_delegator :@socket, :identity=
+
+    def initialize
+      super
+      @raw = true
+    end
 
     def selectable_fd
       @socket.fd
@@ -72,7 +79,31 @@ module ZMachine
     def read_inbound_data
       ZMachine.logger.debug("zmachine:zmq_channel:#{__method__}", channel: self) if ZMachine.debug
       return nil unless can_recv?
-      ZMsg.recv_msg(@socket)
+      data = ZMsg.recv_msg(@socket)
+      data = String.from_java_bytes(data.first.data) unless @raw
+      data
+    end
+
+    def send1(a)
+      @socket.send_byte_array(a, ZMQ::DONTWAIT)
+    end
+
+    def send2(a, b)
+      @socket.send_byte_array(a, ZMQ::SNDMORE | ZMQ::DONTWAIT) and
+      @socket.send_byte_array(b, ZMQ::DONTWAIT)
+    end
+
+    def send3(a, b, c)
+      @socket.send_byte_array(a, ZMQ::SNDMORE | ZMQ::DONTWAIT) and
+      @socket.send_byte_array(b, ZMQ::SNDMORE | ZMQ::DONTWAIT) and
+      @socket.send_byte_array(c, ZMQ::DONTWAIT)
+    end
+
+    def send4(a, b, c, d)
+      @socket.send_byte_array(a, ZMQ::SNDMORE | ZMQ::DONTWAIT) and
+      @socket.send_byte_array(b, ZMQ::SNDMORE | ZMQ::DONTWAIT) and
+      @socket.send_byte_array(c, ZMQ::SNDMORE | ZMQ::DONTWAIT) and
+      @socket.send_byte_array(d, ZMQ::DONTWAIT)
     end
 
     def close!
