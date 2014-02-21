@@ -84,28 +84,6 @@ module ZMachine
       data
     end
 
-    def send1(a)
-      @socket.send_byte_array(a, ZMQ::DONTWAIT)
-    end
-
-    def send2(a, b)
-      @socket.send_byte_array(a, ZMQ::SNDMORE | ZMQ::DONTWAIT) and
-      @socket.send_byte_array(b, ZMQ::DONTWAIT)
-    end
-
-    def send3(a, b, c)
-      @socket.send_byte_array(a, ZMQ::SNDMORE | ZMQ::DONTWAIT) and
-      @socket.send_byte_array(b, ZMQ::SNDMORE | ZMQ::DONTWAIT) and
-      @socket.send_byte_array(c, ZMQ::DONTWAIT)
-    end
-
-    def send4(a, b, c, d)
-      @socket.send_byte_array(a, ZMQ::SNDMORE | ZMQ::DONTWAIT) and
-      @socket.send_byte_array(b, ZMQ::SNDMORE | ZMQ::DONTWAIT) and
-      @socket.send_byte_array(c, ZMQ::SNDMORE | ZMQ::DONTWAIT) and
-      @socket.send_byte_array(d, ZMQ::DONTWAIT)
-    end
-
     def close!
       ZMachine.logger.debug("zmachine:zmq_channel:#{__method__}", channel: self) if ZMachine.debug
       @closed = true
