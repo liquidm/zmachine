@@ -106,7 +106,7 @@ describe TCPChannel do
   after(:each) do
     @client.close
     @server.close
-    ZMachine.context.destroy
+    ZContext.destroy
   end
 
   let(:data) { "foo".to_java_bytes }
@@ -157,7 +157,7 @@ describe ZMQChannel do
   after(:each) do
     @client.close
     @server.close
-    ZMachine.context.destroy
+    ZContext.destroy
   end
 
   let(:data) { "foo".to_java_bytes }

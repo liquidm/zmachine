@@ -14,7 +14,7 @@ shared_examples_for "a Connection" do
   after(:each) do
     @client.close!
     @server.close!
-    ZMachine.context.destroy
+    ZContext.destroy
   end
 
   let(:data) { "foo" }

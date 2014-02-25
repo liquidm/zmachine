@@ -1,8 +1,3 @@
-require 'zmachine/jeromq-0.3.2-SNAPSHOT.jar'
-java_import org.zeromq.ZMsg
-java_import org.zeromq.ZMQ
-java_import org.zeromq.ZMQException
-
 require 'zmachine'
 require 'zmachine/channel'
 
@@ -42,7 +37,7 @@ module ZMachine
       ZMachine.logger.debug("zmachine:zmq_channel:#{__method__}", channel: self) if ZMachine.debug
       @bound = true
       @connected = true
-      @socket = ZMachine.context.create_socket(type)
+      @socket = ZContext.create_socket(type)
       @socket.bind(address)
     end
 
@@ -58,7 +53,7 @@ module ZMachine
     def connect(address, type)
       ZMachine.logger.debug("zmachine:zmq_channel:#{__method__}", channel: self) if ZMachine.debug
       @connection_pending = true
-      @socket = ZMachine.context.create_socket(type)
+      @socket = ZContext.create_socket(type)
       @socket.connect(address)
     end
 
@@ -89,7 +84,7 @@ module ZMachine
       @closed = true
       @connected = false
       @bound = false
-      ZMachine.context.destroySocket(@socket)
+      ZContext.destroy_socket(@socket)
     end
 
     def closed?

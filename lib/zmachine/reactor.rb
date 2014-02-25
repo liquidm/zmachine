@@ -122,7 +122,7 @@ module ZMachine
         @running = false
         Reactor.unregister_reactor(self)
         ZMachine.logger.debug("zmachine:reactor:#{__method__}", stop: :zcontext) if ZMachine.debug
-        ZMachine.context.destroy
+        ZContext.destroy
         ZMachine.clear_current_reactor
       end
     end

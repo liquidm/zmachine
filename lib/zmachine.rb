@@ -1,6 +1,3 @@
-require 'zmachine/jeromq-0.3.2-SNAPSHOT.jar'
-java_import org.zeromq.ZContext
-
 require 'liquid/boot'
 
 require 'zmachine/connection'
@@ -24,8 +21,9 @@ module ZMachine
     Thread.current[:reactor] ||= Reactor.new
   end
 
+  # for backwards compat. please use ZContext.instance directly.
   def self.context
-    Thread.current[:context] ||= ZContext.new
+    ZContext.instance
   end
 
   def self.add_periodic_timer(*args, &block)

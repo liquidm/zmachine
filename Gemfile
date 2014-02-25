@@ -3,6 +3,6 @@ source 'https://rubygems.org'
 gemspec
 
 gem 'liquid-development'
-gem 'liquid-ext'
+gem 'liquid-ext', github: 'liquidm/ext'
 gem 'ruby-debug'
-gem 'z-http-request', path: '../z-http-request'
+gem 'z-http-request', github: 'liquidm/z-http-request'
