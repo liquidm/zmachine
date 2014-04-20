@@ -100,6 +100,10 @@ module ZMachine
     reactor.stop_server(signature)
   end
 
+  def self.stop
+    Reactor.terminate_all_reactors
+  end
+
 end
 
 if ENV['DEBUG']

@@ -2,7 +2,7 @@
 
 Gem::Specification.new do |spec|
   spec.name          = "zmachine"
-  spec.version       = "0.4.2"
+  spec.version       = "0.4.3"
   spec.authors       = ["LiquidM, Inc."]
   spec.email         = ["opensource@liquidm.com"]
   spec.description   = %q{pure JRuby multi-threaded mostly EventMachine compatible event loop}
@@ -15,5 +15,5 @@ Gem::Specification.new do |spec|
   spec.test_files    = spec.files.grep(%r{^(test|spec|features)/})
   spec.require_paths = ["lib"]
 
-  spec.add_dependency "liquid-ext", ">= 3.3.8"
+  spec.add_dependency "liquid-ext", ">= 3.3.9"
 end
