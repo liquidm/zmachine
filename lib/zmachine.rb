@@ -13,8 +13,8 @@ module ZMachine
     attr_accessor :debug
   end
 
-  def self.clear_current_reactor
-    Thread.current[:reactor] = nil
+  def self.reactor=(value)
+    Thread.current[:reactor] = value
   end
 
   def self.reactor
@@ -98,10 +98,6 @@ module ZMachine
 
   def self.stop_server(signature)
     reactor.stop_server(signature)
-  end
-
-  def self.stop
-    Reactor.terminate_all_reactors
   end
 
 end

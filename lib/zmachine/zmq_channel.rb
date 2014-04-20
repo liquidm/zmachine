@@ -1,21 +1,6 @@
 require 'zmachine'
 require 'zmachine/channel'
 
-class ZMQ
-  class Socket
-    # for performance reason we alias the method here (otherwise it uses reflections all the time!)
-    # super ugly, since we need to dynamically infer the java class of byte[]
-    java_alias :send_byte_buffer, :sendByteBuffer, [Java::JavaNio::ByteBuffer.java_class, Java::int]
-    java_alias :send_byte_array, :send, [[].to_java(:byte).java_class, Java::int]
-    java_alias :recv_byte_array, :recv, [Java::int]
-
-    def write(buffer)
-      bytes = send_byte_buffer(buffer, 0)
-      buffer.position(buffer.position + bytes)
-    end
-  end
-end
-
 module ZMachine
   class ZMQChannel < Channel
 

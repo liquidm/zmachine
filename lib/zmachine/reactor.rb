@@ -12,28 +12,6 @@ module ZMachine
 
   class Reactor
 
-    @mutex = Mutex.new
-
-    def self.register_reactor(reactor)
-      @mutex.synchronize do
-        @reactors ||= []
-        @reactors << reactor
-      end
-    end
-
-    def self.terminate_all_reactors
-      @mutex.synchronize do
-        @reactors.each(&:stop_event_loop)
-        @reactors.clear
-      end
-    end
-
-    def self.unregister_reactor(reactor)
-      @mutex.synchronize do
-        @reactors.delete(reactor)
-      end
-    end
-
     def initialize
       @heartbeat_interval = ZMachine.heartbeat_interval || 0.5 # coarse grained by default
       @next_tick_queue = ConcurrentLinkedQueue.new
@@ -101,7 +79,7 @@ module ZMachine
       ZMachine.logger.debug("zmachine:reactor:#{__method__}") if ZMachine.debug
       add_shutdown_hook(shutdown_hook) if shutdown_hook
       begin
-        Reactor.register_reactor(self)
+        Signal.register_shutdown_handler { self.stop_event_loop }
         @running = true
         if callback = (callback || block)
           add_timer(0) { callback.call(self) }
@@ -120,10 +98,8 @@ module ZMachine
         @shutdown_hooks.pop.call until @shutdown_hooks.empty?
         @next_tick_queue = ConcurrentLinkedQueue.new
         @running = false
-        Reactor.unregister_reactor(self)
         ZMachine.logger.debug("zmachine:reactor:#{__method__}", stop: :zcontext) if ZMachine.debug
-        ZContext.destroy
-        ZMachine.clear_current_reactor
+        ZMachine.reactor = nil
       end
     end
 
