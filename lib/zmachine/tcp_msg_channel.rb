@@ -82,11 +82,11 @@ module ZMachine
 
       # clear buffer
       if @buffer.remaining
-        @buffer.clear
-      else
         bytes = java.util.Arrays.copyOfRange(@buffer.array, @buffer.position, @buffer.position+@buffer.remaining)
         @buffer.clear
         @buffer.put(bytes)
+      else
+        @buffer.clear
       end
 
       data
