@@ -2,6 +2,7 @@ java_import java.nio.channels.ClosedChannelException
 
 require 'zmachine/tcp_channel'
 require 'zmachine/zmq_channel'
+require 'zmachine/tcp_msg_channel'
 require 'set'
 
 module ZMachine
