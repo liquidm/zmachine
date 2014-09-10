@@ -25,9 +25,9 @@ module ZMachine
 
     def bind(address, port_or_type, &block)
       ZMachine.logger.debug("zmachine:connection:#{__method__}", connection: self) if ZMachine.debug
-      klass = (address =~ %r{\w+://}) ? ZMQChannel : TCPChannel
+      klass = channel_class(address)
       @channel = klass.new
-      @channel.bind(address, port_or_type)
+      @channel.bind(sanitize_adress(address, klass), port_or_type)
       @block = block
       @block.call(self) if @block && @channel.is_a?(ZMQChannel)
       self
@@ -35,12 +35,31 @@ module ZMachine
 
     def connect(address, port_or_type, &block)
       ZMachine.logger.debug("zmachine:connection:#{__method__}", connection: self) if ZMachine.debug
-      klass = (address.nil? || address =~ %r{\w+://}) ? ZMQChannel : TCPChannel
+      klass = channel_class(address)
       @channel = klass.new
-      @channel.connect(address, port_or_type) if address
+      @channel.connect(sanitize_adress(address, klass), port_or_type) if address
       yield self if block_given?
       renew_timer
       self
+    end
+
+    def channel_class(address)
+      protocol = address.match(/\w+:\/\//)
+      if protocol == nil
+        return TCPChannel
+      elsif protocol[0] == 'msg://'
+        return TcpMsgChannel
+      end
+
+      ZMQChannel
+    end
+
+    def sanitize_adress(address, channel_klass)
+      if channel_klass == TcpMsgChannel
+        return address.match(/:\/\/(.+)/)[1]
+      end
+
+      address
     end
 
     # callbacks
