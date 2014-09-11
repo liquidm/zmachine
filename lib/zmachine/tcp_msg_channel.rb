@@ -11,9 +11,9 @@ module ZMachine
     MAGIC = ".lqm".freeze
 
     def initialize
-      super
+      @outbound_queue = ConcurrentLinkedQueue.new
+      @buffer = ByteBuffer.allocate(1024 * 1024)
       @raw = true
-      @buffer = Thread.current[:tcp_channel_buffer] ||= ByteBuffer.allocate(1024 * 1024)
     end
 
     def accept
@@ -31,7 +31,7 @@ module ZMachine
       ZMachine.logger.debug("zmachine:tcp_msg_channel:#{__method__}", channel: self) if ZMachine.debug
       raise IOException.new("EOF") if @socket.read(@buffer) == -1
 
-      @buffer.mark
+      pos = @buffer.position
       @buffer.flip
 
       # validate magic
@@ -44,7 +44,7 @@ module ZMachine
           return
         end
       else
-        @buffer.reset.limit(@buffer.capacity)
+        @buffer.position(pos).limit(@buffer.capacity)
         return
       end
 
@@ -54,7 +54,7 @@ module ZMachine
         @buffer.position(@buffer.position+4)
         array_length = String.from_java_bytes(bytes).unpack('V')[0]
       else
-        @buffer.reset.limit(@buffer.capacity)
+        @buffer.position(pos).limit(@buffer.capacity)
         return
       end
 
@@ -67,7 +67,7 @@ module ZMachine
           @buffer.position(@buffer.position+4)
           data_length = String.from_java_bytes(bytes).unpack('V')[0]
         else
-          @buffer.reset.limit(@buffer.capacity)
+          @buffer.position(pos).limit(@buffer.capacity)
           return
         end
 
@@ -75,7 +75,7 @@ module ZMachine
           data[i] = java.util.Arrays.copyOfRange(@buffer.array, @buffer.position, @buffer.position+data_length)
           @buffer.position(@buffer.position+data_length)
         else
-          @buffer.reset.limit(@buffer.capacity)
+          @buffer.position(pos).limit(@buffer.capacity)
           return
         end
       end
