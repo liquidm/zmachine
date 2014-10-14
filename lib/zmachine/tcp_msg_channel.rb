@@ -26,6 +26,10 @@ module ZMachine
       channel
     end
 
+    def more?
+      @buffer.remaining > 8
+    end
+
     # return nil if no addional data is available
     def read_inbound_data
       ZMachine.logger.debug("zmachine:tcp_msg_channel:#{__method__}", channel: self) if ZMachine.debug

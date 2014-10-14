@@ -172,11 +172,12 @@ module ZMachine
 
     def readable!
       ZMachine.logger.debug("zmachine:connection:#{__method__}", connection: self) if ZMachine.debug
-      mark_active!
       loop do
+        mark_active!
         data = @channel.read_inbound_data
         if data
           receive_data(data)
+          break unless @channel.more?
         else
           break
         end
