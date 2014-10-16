@@ -26,6 +26,10 @@ module ZMachine
       channel
     end
 
+    def more?
+      @buffer.remaining > 8
+    end
+
     # return nil if no addional data is available
     def read_inbound_data
       ZMachine.logger.debug("zmachine:tcp_msg_channel:#{__method__}", channel: self) if ZMachine.debug
@@ -80,14 +84,7 @@ module ZMachine
         end
       end
 
-      # clear buffer
-      if @buffer.remaining
-        bytes = java.util.Arrays.copyOfRange(@buffer.array, @buffer.position, @buffer.position+@buffer.remaining)
-        @buffer.clear
-        @buffer.put(bytes)
-      else
-        @buffer.clear
-      end
+      @buffer.compact
 
       data
     end

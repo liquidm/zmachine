@@ -32,6 +32,10 @@ module ZMachine
       connected? && !@outbound_queue.empty?
     end
 
+    def more?
+      false
+    end
+
     def send_data(data)
       ZMachine.logger.debug("zmachine:channel:#{__method__}", channel: self) if ZMachine.debug
       raise RuntimeError.new("send_data called after close") if @closed_callback
